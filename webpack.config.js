@@ -259,7 +259,7 @@ module.exports = function(options) {
     devtool: "inline-source-map"
   };
 
-  var evergageTargetPackage = '/' + process.env.EVERGAGE_MAIN_PRODUCT_DIR + '/analytics/server-ui/node_modules/@bower_components/surveyjs-evg/packages/';
+  var evergageTargetPackage = '/' + process.env.EVERGAGE_MAIN_PRODUCT_DIR + '/analytics/server-ui/node_modules/@bower_components/surveyjs-evg/packages/survey-' + options.platform + '/';
 
   if (options.buildType === "prod") {
     config.devtool = false;
