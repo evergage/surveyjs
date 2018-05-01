@@ -6,6 +6,7 @@ var ExtractTextPlugin = require("extract-text-webpack-plugin");
 var dts = require("dts-bundle");
 var rimraf = require("rimraf");
 var GenerateJsonPlugin = require("generate-json-webpack-plugin");
+var CopyWebpackPlugin = require('copy-webpack-plugin');
 var packageJson = require("./package.json");
 var fs = require("fs");
 var replace = require("replace-in-file");
@@ -258,6 +259,8 @@ module.exports = function(options) {
     devtool: "inline-source-map"
   };
 
+  var evergageTargetPackage = '/' + process.env.EVERGAGE_MAIN_PRODUCT_DIR + '/analytics/server-ui/node_modules/@bower_components/surveyjs-evg/packages/';
+
   if (options.buildType === "prod") {
     config.devtool = false;
     config.plugins = config.plugins.concat([
@@ -267,7 +270,12 @@ module.exports = function(options) {
         packagePlatformJson,
         undefined,
         2
-      )
+      ),
+      new CopyWebpackPlugin([
+        { from: packagePath, to: evergageTargetPackage }
+      ], {
+        force: true
+      })
     ]);
   }
 
