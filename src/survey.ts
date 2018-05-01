@@ -1937,13 +1937,15 @@ export class SurveyModel extends Base
    * @param page
    */
   public removePage(page: PageModel) {
-    var index = this.pages.indexOf(page);
-    if (index < 0) return;
-    this.pages.splice(index, 1);
-    if (this.currentPageValue == page) {
-      this.currentPage = this.pages.length > 0 ? this.pages[0] : null;
+    if (this.pages.length > 1) {
+      var index = this.pages.indexOf(page);
+      if (index < 0) return;
+      this.pages.splice(index, 1);
+      if (this.currentPageValue == page) {
+        this.currentPage = this.pages.length > 0 ? this.pages[0] : null;
+      }
+      this.updateVisibleIndexes();
     }
-    this.updateVisibleIndexes();
   }
   /**
    * Returns a question by its name
