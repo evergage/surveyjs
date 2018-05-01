@@ -1000,7 +1000,7 @@ export interface ISurveyImpl {
         getTextProcessor(): ITextProcessor;
 }
 export interface IConditionRunner {
-        runCondition(values: HashTable<any>): any;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): any;
 }
 export interface ISurveyElement {
         name: string;
@@ -1245,9 +1245,10 @@ export declare class ChoicesRestfull extends Base {
 export declare class FunctionFactory {
     static Instance: FunctionFactory;
     register(name: string, func: (params: any[]) => any): void;
+    unregister(name: string): void;
     clear(): void;
     getAll(): Array<string>;
-    run(name: string, params: any[]): any;
+    run(name: string, params: any[], properties?: HashTable<any>): any;
 }
 
 export declare class Operand {
@@ -1303,12 +1304,12 @@ export declare class ConditionNode {
 export declare class ExpressionRunner {
     constructor(expression: string);
     expression: string;
-    run(values: HashTable<any>): any;
+    run(values: HashTable<any>, properties?: HashTable<any>): any;
 }
 export declare class ConditionRunner {
     constructor(expression: string);
     expression: string;
-    run(values: HashTable<any>): boolean;
+    run(values: HashTable<any>, properties?: HashTable<any>): boolean;
 }
 
 export declare class ConditionsParserError {
@@ -1330,6 +1331,7 @@ export declare class ConditionsParser {
 
 export declare class ProcessValue {
     values: HashTable<any>;
+    properties: HashTable<any>;
     constructor();
     getFirstName(text: string): string;
     hasValue(text: string, values?: HashTable<any>): boolean;
@@ -1552,7 +1554,7 @@ export declare class MatrixDropdownCell {
         constructor(column: MatrixDropdownColumn, row: MatrixDropdownRowModelBase, data: IMatrixDropdownData);
         readonly question: Question;
         value: any;
-        runCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
 }
 export declare class MatrixDropdownRowModelBase implements ISurveyData, ISurveyImpl, ILocalizableOwner, ITextProcessor {
         protected data: IMatrixDropdownData;
@@ -1575,7 +1577,7 @@ export declare class MatrixDropdownRowModelBase implements ISurveyData, ISurveyI
         getLocale(): string;
         getMarkdownHtml(text: string): string;
         onLocaleChanged(): void;
-        runCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
         protected buildCells(): void;
         protected createCell(column: MatrixDropdownColumn): MatrixDropdownCell;
         geSurveyData(): ISurveyData;
@@ -1622,8 +1624,8 @@ export declare class QuestionMatrixDropdownModelBase extends Question implements
         getCellType(): string;
         getConditionJson(operator?: string, path?: string): any;
         clearIncorrectValues(): void;
-        runCondition(values: HashTable<any>): void;
-        protected runCellsCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
+        protected runCellsCondition(values: HashTable<any>, properties: HashTable<any>): void;
         onLocaleChanged(): void;
         /**
             * Returns the column by it's name. Retuns null if a column with this name doesn't exist.
@@ -2215,7 +2217,7 @@ export declare class PanelModelBase extends SurveyElement implements IPanel, ICo
             * @see removeElement
             */
         removeQuestion(question: QuestionBase): void;
-        runCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
         onLocaleChanged(): void;
         onAnyValueChanged(name: string): void;
         onReadOnlyChanged(): void;
@@ -2459,7 +2461,7 @@ export declare class Question extends QuestionBase implements IValidatorOwner {
             * @see isReadOnly
             */
         enableIf: string;
-        runCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
         onReadOnlyChanged(): void;
         onAnyValueChanged(name: string): void;
         protected readonly no: string;
@@ -2684,7 +2686,7 @@ export declare class QuestionBase extends SurveyElement implements IQuestion, IC
             * @see readOnly
             * @see enableIf
             */
-        runCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
         onSurveyValueChanged(newValue: any): void;
         onSurveyLoad(): void;
         setVisibleIndex(val: number): number;
@@ -3054,7 +3056,7 @@ export declare class QuestionExpressionModel extends Question {
             * <br/>Example: "({quantity} * {price}) * (100 - {discount}) / 100"
             */
         expression: string;
-        runCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
         readonly displayValue: any;
         /**
             * You may set this property to "decimal", "currency" or "percent". If you set it to "currency", you may use the currency property to display the value in currency different from USD.
@@ -3160,7 +3162,7 @@ export declare class QuestionPanelDynamicItem implements ISurveyData, ISurveyImp
         static IndexVariableName: string;
         constructor(data: IQuestionPanelDynamicData, panel: PanelModel);
         readonly panel: PanelModel;
-        runCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
         getValue(name: string): any;
         setValue(name: string, newValue: any): void;
         getComment(name: string): string;
@@ -3437,8 +3439,8 @@ export declare class QuestionPanelDynamicModel extends Question implements IQues
         addConditionNames(names: Array<string>): void;
         getConditionJson(operator?: string, path?: string): any;
         onSurveyLoad(): void;
-        runCondition(values: HashTable<any>): void;
-        protected runPanelsCondition(values: HashTable<any>): void;
+        runCondition(values: HashTable<any>, properties: HashTable<any>): void;
+        protected runPanelsCondition(values: HashTable<any>, properties: HashTable<any>): void;
         onReadOnlyChanged(): void;
         onAnyValueChanged(name: string): void;
         hasErrors(fireCallback?: boolean): boolean;
