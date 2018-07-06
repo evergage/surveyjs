@@ -30,6 +30,12 @@ export class Operand {
   public get isBoolean() {
     return this.isBooleanValue(this.origionalValue);
   }
+  public fillVariables(vars: Array<string>) {
+    var name = this.getValueName(this.origionalValue);
+    if (!!name) {
+      vars.push(name);
+    }
+  }
   public toString(): string {
     var val = this.origionalValue;
     if (val && (!this.isNumeric(val) && !this.isBooleanValue(val)))
@@ -85,7 +91,11 @@ export class Operand {
     }
     if (this.isNumeric(val)) {
       res.isSimple = true;
-      res.value = parseFloat(val);
+      if (val.indexOf("0x") == 0) {
+        res.value = parseInt(val);
+      } else {
+        res.value = parseFloat(val);
+      }
       return res;
     }
     if (this.isBooleanValue(val)) {
@@ -111,6 +121,11 @@ export class FunctionOperand extends Operand {
       paramValues,
       processValue.properties
     );
+  }
+  public fillVariables(vars: Array<string>) {
+    for (var i = 0; i < this.parameters.length; i++) {
+      this.parameters[i].fillVariables(vars);
+    }
   }
   public toString() {
     var res = this.origionalValue + "(";
@@ -151,6 +166,10 @@ export class ExpressionOperand extends Operand {
     }
     return null;
   }
+  public fillVariables(vars: Array<string>) {
+    if (!!this.left) this.left.fillVariables(vars);
+    if (!!this.right) this.left.fillVariables(vars);
+  }
   public toString() {
     var res = this.left ? this.left.toString() : "";
     res += " " + this.operator + " ";
@@ -170,6 +189,11 @@ export class ConditionOperand extends Operand {
     this.processValue = processValue;
     return this.runNode(this.root);
   }
+  public fillVariables(vars: Array<string>) {
+    if (!!this.root) {
+      this.root.fillVariables(vars);
+    }
+  }
   public toString(): string {
     return this.root ? this.root.toString() : "";
   }
@@ -177,10 +201,10 @@ export class ConditionOperand extends Operand {
     var onFirstFail = node.connective == "and";
     for (var i = 0; i < node.children.length; i++) {
       var res = this.runNodeCondition(node.children[i]);
-      if (!res && onFirstFail) return false;
-      if (res && !onFirstFail) return true;
+      if (!res && onFirstFail) return node.isNot;
+      if (res && !onFirstFail) return !node.isNot;
     }
-    return onFirstFail;
+    return !node.isNot ? onFirstFail : !onFirstFail;
   }
   private runNodeCondition(value: any): boolean {
     if (value["children"]) return this.runNode(value);
@@ -219,6 +243,7 @@ export class Condition {
         return Condition.operatorsValue.containsCore(left, right, true);
       },
       notcontains: function(left, right) {
+        if (!left && !Helpers.isValueEmpty(right)) return true;
         return Condition.operatorsValue.containsCore(left, right, false);
       },
       containsCore: function(left, right, isContains) {
@@ -316,6 +341,10 @@ export class Condition {
     var rightValue = right ? right.getValue(processValue) : null;
     return Condition.operators[this.operator](leftValue, rightValue);
   }
+  public fillVariables(vars: Array<string>) {
+    if (this.left) this.left.fillVariables(vars);
+    if (this.right) this.right.fillVariables(vars);
+  }
   public toString(): string {
     if (!this.right || !this.operator) return "";
     var left = this.left.toString();
@@ -337,6 +366,7 @@ export class Condition {
 }
 export class ConditionNode {
   private connectiveValue: string = "and";
+  public isNot: boolean = false;
   public children: Array<any> = [];
   public constructor() {}
   public get connective(): string {
@@ -356,6 +386,16 @@ export class ConditionNode {
   public clear() {
     this.children = [];
     this.connective = "and";
+  }
+  public getVariables(): Array<string> {
+    var vars = [];
+    this.fillVariables(vars);
+    return vars;
+  }
+  public fillVariables(vars: Array<string>) {
+    for (var i = 0; i < this.children.length; i++) {
+      this.children[i].fillVariables(vars);
+    }
   }
   public toString(): string {
     if (this.isEmpty) return "";
@@ -411,6 +451,9 @@ export class ConditionRunner {
     if (this.expression == value) return;
     this.expressionValue = value;
     new ConditionsParser().parse(this.expressionValue, this.root);
+  }
+  public getVariables(): Array<string> {
+    return !!this.root ? this.root.getVariables() : [];
   }
   public run(
     values: HashTable<any>,

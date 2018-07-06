@@ -3,6 +3,7 @@ import { ItemValue } from "../src/itemvalue";
 import { Base } from "../src/base";
 import { Helpers } from "../src/helpers";
 import { ILocalizableOwner } from "../src/localizablestring";
+import { QuestionMatrixDynamicModel } from "../src/question_matrixdynamic";
 
 class Car extends Base implements ILocalizableOwner {
   public locale: string;
@@ -17,6 +18,9 @@ class Car extends Base implements ILocalizableOwner {
     return this.locale;
   }
   getMarkdownHtml(text: string): string {
+    return text;
+  }
+  getProcessedText(text: string): string {
     return text;
   }
 }
@@ -352,6 +356,13 @@ JsonObject.metaData.addProperty("customtruck", {
 
 JsonObject.metaData.addClass(
   "customdealer",
+  [{ name: "defaultValue", visible: false }],
+  null,
+  "dealer"
+);
+
+JsonObject.metaData.addClass(
+  "camelDealer",
   [{ name: "defaultValue", visible: false }],
   null,
   "dealer"
@@ -698,6 +709,31 @@ QUnit.test(
     assert.deepEqual(
       jsObj,
       { items: [{ value: { id: 1, city: "NY" }, text: "Item 1" }] },
+      "serialize ItemValueListOwner"
+    );
+  }
+);
+QUnit.test(
+  "defaultValue and defaultRowValue deserialization, remove pos",
+  function(assert) {
+    var json = {
+      name: "q1",
+      defaultValue: [
+        { pos: { start: 1, end: 5 }, column1: 1, column2: 2 },
+        { column1: 3, column2: 4 }
+      ],
+      defaultRowValue: { pos: { start: 1, end: 5 }, column1: 1, column2: 2 }
+    };
+    var matrix = new QuestionMatrixDynamicModel("q1");
+    new JsonObject().toObject(json, matrix);
+    var jsObj = new JsonObject().toJsonObject(matrix);
+    assert.deepEqual(
+      jsObj,
+      {
+        name: "q1",
+        defaultValue: [{ column1: 1, column2: 2 }, { column1: 3, column2: 4 }],
+        defaultRowValue: { column1: 1, column2: 2 }
+      },
       "serialize ItemValueListOwner"
     );
   }
@@ -1274,6 +1310,11 @@ QUnit.test(
     );
   }
 );
+
+QUnit.test("Create class with camel name", function(assert) {
+  var dealer = <Dealer>JsonObject.metaData.createClass("Cameldealer");
+  assert.ok(dealer, "The object is created");
+});
 
 QUnit.test("Generate properties on the fly", function(assert) {
   var carOwner = <CarOwner>JsonObject.metaData.createClass("carowner");

@@ -1,4 +1,5 @@
 import { Base } from "./base";
+import { HashTable } from "./helpers";
 import { ItemValue } from "./itemvalue";
 import { Question } from "./question";
 import { JsonObject } from "./jsonobject";
@@ -8,6 +9,7 @@ import { CustomError } from "./error";
 import { QuestionFactory } from "./questionfactory";
 import { LocalizableString, ILocalizableOwner } from "./localizablestring";
 import { QuestionDropdownModel } from "./question_dropdown";
+import { ConditionRunner } from "./conditions";
 
 export interface IMatrixData {
   onMatrixRowChanged(row: MatrixRowModel);
@@ -176,14 +178,25 @@ export class QuestionMatrixModel extends Question
   implements IMatrixData, IMatrixCellsOwner {
   private columnsValue: Array<ItemValue>;
   private rowsValue: Array<ItemValue>;
+  private filteredColumns: Array<ItemValue>;
+  private filteredRows: Array<ItemValue>;
   private isRowChanging = false;
   private generatedVisibleRows: Array<MatrixRowModel>;
   private cellsValue;
+  public visibleRowsChangedCallback: () => void;
   constructor(public name: string) {
     super(name);
+    this.filteredRows = null;
+    this.filteredColumns = null;
     this.columnsValue = this.createItemValues("columns");
     this.rowsValue = this.createItemValues("rows");
     this.cellsValue = new MartrixCells(this);
+    var self = this;
+    this.registerFunctionOnPropertyValueChanged("rows", function() {
+      if (!self.filterItems()) {
+        self.onRowsChanged();
+      }
+    });
   }
   public getType(): string {
     return "matrix";
@@ -215,6 +228,9 @@ export class QuestionMatrixModel extends Question
   set columns(newValue: Array<any>) {
     this.setPropertyValue("columns", newValue);
   }
+  public get visibleColumns(): Array<any> {
+    return !!this.filteredColumns ? this.filteredColumns : this.columns;
+  }
   /**
    * The list of rows. A row has a value and an optional text
    */
@@ -223,25 +239,28 @@ export class QuestionMatrixModel extends Question
   }
   set rows(newValue: Array<any>) {
     this.setPropertyValue("rows", newValue);
+    this.filterItems();
   }
   /**
-   * Returns the list of rows as model objects.
+   * Returns the list of visible rows as model objects.
+   * @see rowsVisibleIf
    */
   public get visibleRows(): Array<MatrixRowModel> {
     var result = new Array<MatrixRowModel>();
     var val = this.value;
     if (!val) val = {};
-    for (var i = 0; i < this.rows.length; i++) {
-      if (!this.rows[i].value) continue;
+    var rows = !!this.filteredRows ? this.filteredRows : this.rows;
+    for (var i = 0; i < rows.length; i++) {
+      if (!rows[i].value) continue;
       result.push(
         this.createMatrixRow(
-          this.rows[i],
+          rows[i],
           this.name + "_" + this.rows[i].value.toString(),
           val[this.rows[i].value]
         )
       );
     }
-    if (result.length == 0) {
+    if (result.length == 0 && !this.filteredRows) {
       result.push(this.createMatrixRow(new ItemValue(null), this.name, val));
     }
     this.generatedVisibleRows = result;
@@ -251,7 +270,97 @@ export class QuestionMatrixModel extends Question
     return this.rows;
   }
   getColumns(): Array<any> {
-    return this.columns;
+    return this.visibleColumns;
+  }
+  protected onRowsChanged() {
+    this.fireCallback(this.visibleRowsChangedCallback);
+  }
+  /**
+   * An expression that returns true or false. It runs against each row item and if for this item it returns true, then the item is visible otherwise the item becomes invisible. Please use {item} to get the current item value in the expression.
+   * @see visibleIf
+   */
+  public get rowsVisibleIf(): string {
+    return this.getPropertyValue("rowsVisibleIf", "");
+  }
+  public set rowsVisibleIf(val: string) {
+    this.setPropertyValue("rowsVisibleIf", val);
+    this.filterItems();
+  }
+  /**
+   * An expression that returns true or false. It runs against each column item and if for this item it returns true, then the item is visible otherwise the item becomes invisible. Please use {item} to get the current item value in the expression.
+   * @see rowVisibleIf
+   */
+  public get columnsVisibleIf(): string {
+    return this.getPropertyValue("columnsVisibleIf", "");
+  }
+  public set columnsVisibleIf(val: string) {
+    this.setPropertyValue("columnsVisibleIf", val);
+    this.filterItems();
+  }
+  public runCondition(values: HashTable<any>, properties: HashTable<any>) {
+    super.runCondition(values, properties);
+    this.runItemsCondition(values, properties);
+  }
+  protected filterItems(): boolean {
+    if (this.isLoadingFromJson || !this.data || this.isDesignMode) return false;
+    return this.runItemsCondition(
+      this.getDataFilteredValues(),
+      this.getDataFilteredProperties()
+    );
+  }
+  protected runItemsCondition(
+    values: HashTable<any>,
+    properties: HashTable<any>
+  ): boolean {
+    var hasChanges = this.runConditionsForRows(values, properties);
+    hasChanges = this.runConditionsForColumns(values, properties) || hasChanges;
+    if (hasChanges) {
+      if (!!this.filteredColumns || !!this.filteredRows) {
+        this.clearIncorrectValues();
+      }
+      this.onRowsChanged();
+    }
+    return hasChanges;
+  }
+  private runConditionsForRows(
+    values: HashTable<any>,
+    properties: HashTable<any>
+  ): boolean {
+    var runner = !!this.rowsVisibleIf
+      ? new ConditionRunner(this.rowsVisibleIf)
+      : null;
+    this.filteredRows = [];
+    var hasChanged = ItemValue.runConditionsForItems(
+      this.rows,
+      this.filteredRows,
+      runner,
+      values,
+      properties
+    );
+    if (this.filteredRows.length === this.rows.length) {
+      this.filteredRows = null;
+    }
+    return hasChanged;
+  }
+  private runConditionsForColumns(
+    values: HashTable<any>,
+    properties: HashTable<any>
+  ): boolean {
+    var runner = !!this.columnsVisibleIf
+      ? new ConditionRunner(this.columnsVisibleIf)
+      : null;
+    this.filteredColumns = [];
+    var hasChanged = ItemValue.runConditionsForItems(
+      this.columns,
+      this.filteredColumns,
+      runner,
+      values,
+      properties
+    );
+    if (this.filteredColumns.length === this.columns.length) {
+      this.filteredColumns = null;
+    }
+    return hasChanged;
   }
   public get cells(): MartrixCells {
     return this.cellsValue;
@@ -285,13 +394,16 @@ export class QuestionMatrixModel extends Question
   public clearIncorrectValues() {
     var val = this.value;
     if (!val) return;
-    var newVal = {};
+    var newVal = null;
     var isChanged = false;
+    var rows = !!this.filteredRows ? this.filteredRows : this.rows;
+    var columns = !!this.filteredColumns ? this.filteredColumns : this.columns;
     for (var key in val) {
       if (
-        ItemValue.getItemByValue(this.rows, key) &&
-        ItemValue.getItemByValue(this.columns, val[key])
+        ItemValue.getItemByValue(rows, key) &&
+        ItemValue.getItemByValue(columns, val[key])
       ) {
+        if (newVal == null) newVal = {};
         newVal[key] = val[key];
       } else {
         isChanged = true;
@@ -308,7 +420,7 @@ export class QuestionMatrixModel extends Question
     super.onCheckForErrors(errors);
     if (this.hasErrorInRows()) {
       errors.push(
-        new CustomError(surveyLocalization.getString("requiredInAllRowsError"))
+        new CustomError(surveyLocalization.getString("requiredInAllRowsError"), this)
       );
     }
   }
@@ -354,13 +466,20 @@ export class QuestionMatrixModel extends Question
     }
     this.isRowChanging = false;
   }
-  public get displayValue(): any {
+  public getDisplayValueCore(keysAsText: boolean): any {
     var values = this.value;
     if (!values) return values;
+    var res = {};
     for (var key in values) {
-      values[key] = ItemValue.getTextOrHtmlByValue(this.columns, values[key]);
+      var newKey = keysAsText
+        ? ItemValue.getTextOrHtmlByValue(this.rows, key)
+        : key;
+      if (!newKey) newKey = key;
+      var newValue = ItemValue.getTextOrHtmlByValue(this.columns, values[key]);
+      if (!newValue) newValue = values[key];
+      res[newKey] = newValue;
     }
-    return values;
+    return res;
   }
   public addConditionNames(names: Array<string>) {
     for (var i = 0; i < this.rows.length; i++) {
@@ -416,6 +535,8 @@ JsonObject.metaData.addClass(
         obj.rows = value;
       }
     },
+    "columnsVisibleIf:condition",
+    "rowsVisibleIf:condition",
     { name: "cells:cells", serializationProperty: "cells" },
     "isAllRowRequired:boolean"
   ],

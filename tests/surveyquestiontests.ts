@@ -203,6 +203,48 @@ QUnit.test(
     );
   }
 );
+QUnit.test("displayValue function for rating question, issue #1094", function(
+  assert
+) {
+  var question = new QuestionRatingModel("q1");
+  question.rateValues = [
+    { value: 1, text: "Value 1" },
+    { value: 2, text: "Value 2" }
+  ];
+  assert.equal(
+    question.displayValue,
+    "",
+    "value is null, displayValue is empty"
+  );
+  question.value = 1;
+  assert.equal(question.displayValue, "Value 1", "the first value is selected");
+  question.value = 2;
+  assert.equal(
+    question.displayValue,
+    "Value 2",
+    "the second value is selected"
+  );
+  question.value = 3;
+  assert.equal(
+    question.displayValue,
+    "3",
+    "there is no value in the list, so show the value"
+  );
+});
+QUnit.test("matrix.displayValue, bug #1087", function(assert) {
+  var question = new QuestionMatrixModel("q1");
+  question.rows = [{ value: 1, text: "Row 1" }, { value: 2, text: "Row 2" }];
+  question.columns = [
+    { value: 1, text: "Column 1" },
+    { value: 2, text: "Column 2" }
+  ];
+  question.value = { 1: 1, 2: 2 };
+  assert.deepEqual(
+    question.displayValue,
+    { "Row 1": "Column 1", "Row 2": "Column 2" },
+    "matrix question displayValue works correctly"
+  );
+});
 QUnit.test("Question Title property", function(assert) {
   var question = new QuestionTextModel("q1");
   assert.equal(question.title, "q1", "get the question name by default");
@@ -603,7 +645,7 @@ QUnit.test("Validators for multiple text question", function(assert) {
     "The value should be between 10 and 20"
   );
   assert.equal(
-    mText.errors[0].getText().indexOf("t1") >= 0,
+    mText.errors[0].locText.textOrHtml.indexOf("t1") >= 0,
     true,
     "Error contains information about item name"
   );
@@ -891,6 +933,11 @@ QUnit.test("Text questions spaces is not a valid answer for required", function(
   var question = new QuestionTextModel("text");
   question.isRequired = true;
   assert.equal(question.hasErrors(), true, "Question is empty");
+  assert.equal(
+    question.errors[0].locText.textOrHtml,
+    "Please answer the question.",
+    "error has correct text"
+  );
   question.value = "  ";
   assert.equal(question.hasErrors(), true, "spaces is not an answer");
   question.value = " 1 ";
@@ -903,7 +950,7 @@ QUnit.test("Custom text in required error", function(assert) {
   assert.equal(question.hasErrors(), true, "Question is empty");
   assert.equal(question.errors.length, 1, "There is one error");
   assert.equal(
-    question.errors[0].getText(),
+    question.errors[0].locText.textOrHtml,
     "Custom required error",
     "there is a custom errror text"
   );
@@ -1175,4 +1222,298 @@ QUnit.test("questiontext.maxLength", function(assert) {
   assert.equal(qText.getMaxLength(), null, "makes it underfined");
   qText.maxLength = 5;
   assert.equal(qText.getMaxLength(), 5, "gets 5 from question");
+});
+
+QUnit.test("runCondition on adding element into survey", function(assert) {
+  var survey = new SurveyModel();
+  var page = survey.addNewPage("p1");
+  var q = new QuestionCheckboxModel("cars");
+  q.visibleIf = "{val} = 1";
+  page.addElement(q);
+  assert.equal(q.isVisible, false, "It should be invisible");
+});
+
+QUnit.test("questionselectbase.choicesVisibleIf", function(assert) {
+  var survey = new SurveyModel();
+  var page = survey.addNewPage("p1");
+  var qCars = new QuestionCheckboxModel("cars");
+  qCars.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  page.addElement(qCars);
+  var qBestCar = new QuestionRadiogroupModel("bestCar");
+  qBestCar.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  qBestCar.choicesVisibleIf = "{cars} contains {item}";
+  page.addElement(qBestCar);
+  assert.equal(qBestCar.visibleChoices.length, 0, "cars are not selected yet");
+  qCars.value = ["BMW"];
+  assert.equal(qBestCar.visibleChoices.length, 1, "BMW is selected");
+  qCars.value = ["Audi", "BMW", "Mercedes"];
+  assert.equal(qBestCar.visibleChoices.length, 3, "3 cars are selected");
+  qBestCar.choicesVisibleIf = "";
+  assert.equal(qBestCar.visibleChoices.length, 4, "there is no filter");
+});
+
+QUnit.test("questionselectbase.choicesVisibleIf, support {choice}", function(
+  assert
+) {
+  var survey = new SurveyModel();
+  var page = survey.addNewPage("p1");
+  var qCars = new QuestionCheckboxModel("cars");
+  qCars.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  page.addElement(qCars);
+  var qBestCar = new QuestionRadiogroupModel("bestCar");
+  qBestCar.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  qBestCar.choicesVisibleIf = "{cars} contains {choice}";
+  page.addElement(qBestCar);
+  assert.equal(qBestCar.visibleChoices.length, 0, "cars are not selected yet");
+  qCars.value = ["BMW"];
+  assert.equal(qBestCar.visibleChoices.length, 1, "BMW is selected");
+  qCars.value = ["Audi", "BMW", "Mercedes"];
+  assert.equal(qBestCar.visibleChoices.length, 3, "3 cars are selected");
+});
+
+QUnit.test("matrix.rowsVisibleIf", function(assert) {
+  var survey = new SurveyModel();
+  var page = survey.addNewPage("p1");
+  var qCars = new QuestionCheckboxModel("cars");
+  qCars.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  page.addElement(qCars);
+  var qBestCar = new QuestionMatrixModel("bestCar");
+  qBestCar.columns = ["col1"];
+  qBestCar.rows = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  qBestCar.rowsVisibleIf = "{cars} contains {item}";
+  page.addElement(qBestCar);
+  assert.equal(qBestCar.visibleRows.length, 0, "cars are not selected yet");
+  qCars.value = ["BMW"];
+  assert.equal(qBestCar.visibleRows.length, 1, "BMW is selected");
+  qCars.value = ["Audi", "BMW", "Mercedes"];
+  assert.equal(qBestCar.visibleRows.length, 3, "3 cars are selected");
+  qBestCar.rowsVisibleIf = "";
+  assert.equal(qBestCar.visibleRows.length, 4, "there is no filter");
+});
+
+QUnit.test("matrix.columnsVisibleIf", function(assert) {
+  var survey = new SurveyModel();
+  var page = survey.addNewPage("p1");
+  var qCars = new QuestionCheckboxModel("cars");
+  qCars.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  page.addElement(qCars);
+  var qBestCar = new QuestionMatrixModel("bestCar");
+  qBestCar.rows = ["col1"];
+  qBestCar.columns = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+  qBestCar.columnsVisibleIf = "{cars} contains {item}";
+  page.addElement(qBestCar);
+  assert.equal(qBestCar.visibleColumns.length, 0, "cars are not selected yet");
+  qCars.value = ["BMW"];
+  assert.equal(qBestCar.visibleColumns.length, 1, "BMW is selected");
+  qCars.value = ["Audi", "BMW", "Mercedes"];
+  assert.equal(qBestCar.visibleColumns.length, 3, "3 cars are selected");
+  qBestCar.columnsVisibleIf = "";
+  assert.equal(qBestCar.visibleColumns.length, 4, "there is no filter");
+});
+
+QUnit.test(
+  "matrix.rowsVisibleIf, clear value on making the value invisible",
+  function(assert) {
+    var survey = new SurveyModel();
+    var page = survey.addNewPage("p1");
+    var qBestCar = new QuestionMatrixModel("bestCar");
+    qBestCar.columns = ["col1", "col2"];
+    qBestCar.rows = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+    qBestCar.rowsVisibleIf = "{cars} contains {item}";
+    page.addElement(qBestCar);
+    survey.setValue("cars", ["BMW", "Audi", "Mercedes"]);
+    qBestCar.value = { BMW: "col1", Audi: "col2" };
+    assert.deepEqual(
+      qBestCar.value,
+      { BMW: "col1", Audi: "col2" },
+      "Audi is selected"
+    );
+    survey.setValue("cars", ["BMW"]);
+    assert.deepEqual(qBestCar.value, { BMW: "col1" }, "Audi is removed");
+    survey.setValue("cars", ["Mercedes"]);
+    assert.deepEqual(qBestCar.isEmpty(), true, "All checks are removed");
+  }
+);
+
+QUnit.test(
+  "matrix.columnsVisibleIf, clear value on making the value invisible",
+  function(assert) {
+    var survey = new SurveyModel();
+    var page = survey.addNewPage("p1");
+    var qBestCar = new QuestionMatrixModel("bestCar");
+    qBestCar.rows = ["col1", "col2"];
+    qBestCar.columns = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+    qBestCar.columnsVisibleIf = "{cars} contains {item}";
+    page.addElement(qBestCar);
+    survey.setValue("cars", ["BMW", "Audi", "Mercedes"]);
+    qBestCar.value = { col1: "BMW", col2: "Audi" };
+    assert.deepEqual(
+      qBestCar.value,
+      { col1: "BMW", col2: "Audi" },
+      "Audi is selected"
+    );
+    survey.setValue("cars", ["BMW"]);
+    assert.deepEqual(qBestCar.value, { col1: "BMW" }, "Audi is removed");
+    survey.setValue("cars", ["Mercedes"]);
+    assert.deepEqual(qBestCar.isEmpty(), true, "All checks are removed");
+  }
+);
+
+QUnit.test(
+  "radiogroup.choicesVisibleIf, clear value on making the value invisible, bug #1093",
+  function(assert) {
+    var survey = new SurveyModel();
+    var page = survey.addNewPage("p1");
+    var qBestCar = new QuestionRadiogroupModel("bestCar");
+    qBestCar.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+    qBestCar.choicesVisibleIf = "{cars} contains {item}";
+    page.addElement(qBestCar);
+    survey.setValue("cars", ["BMW", "Audi"]);
+    qBestCar.value = "Audi";
+    assert.equal(qBestCar.value, "Audi", "Audi is selected");
+    survey.setValue("cars", ["BMW"]);
+    assert.equal(qBestCar.isEmpty(), true, "Audi is cleared");
+  }
+);
+QUnit.test(
+  "checkbox.choicesVisibleIf, clear value on making the value invisible, bug #1093",
+  function(assert) {
+    var survey = new SurveyModel();
+    var page = survey.addNewPage("p1");
+    var qBestCar = new QuestionCheckboxModel("bestCar");
+    qBestCar.choices = ["Audi", "BMW", "Mercedes", "Volkswagen"];
+    qBestCar.choicesVisibleIf = "{cars} contains {item}";
+    page.addElement(qBestCar);
+    survey.setValue("cars", ["BMW", "Audi", "Mercedes"]);
+    qBestCar.value = ["BMW", "Audi"];
+    assert.deepEqual(qBestCar.value, ["BMW", "Audi"], "Audi is selected");
+    survey.setValue("cars", ["BMW"]);
+    assert.deepEqual(qBestCar.value, ["BMW"], "Audi is removed");
+    survey.setValue("cars", ["Mercedes"]);
+    assert.deepEqual(qBestCar.isEmpty(), true, "All checks are removed");
+  }
+);
+
+QUnit.test("itemValue.visibleIf", function(assert) {
+  var json = {
+    elements: [
+      {
+        type: "checkbox",
+        name: "q",
+        choices: [
+          { value: "contactbyphone", visibleIf: "{phone} notempty" },
+          { value: "contactbyemail", visibleIf: "{email} notempty" }
+        ]
+      }
+    ]
+  };
+  var survey = new SurveyModel(json);
+  var q = <QuestionCheckboxModel>survey.getQuestionByName("q");
+  assert.equal(
+    q.choices[0].visibleIf,
+    "{phone} notempty",
+    "itemValue.visibleIf loaded correctly"
+  );
+  assert.equal(q.visibleChoices.length, 0, "Nothing is set");
+  survey.setValue("phone", "1");
+  assert.equal(q.visibleChoices.length, 1, "phone is set");
+  survey.setValue("email", "2");
+  assert.equal(q.visibleChoices.length, 2, "phone and e-mail are set");
+});
+
+QUnit.test(
+  "multipletext item title renders incorrectly if survey.questionTitleTemplate is set, bug #1170",
+  function(assert) {
+    var json = {
+      questionTitleTemplate: "{no}. {title} {require}",
+      elements: [
+        {
+          type: "multipletext",
+          name: "question1",
+          items: [
+            {
+              name: "text1"
+            }
+          ]
+        }
+      ]
+    };
+    var survey = new SurveyModel(json);
+    var q = <QuestionMultipleTextModel>survey.getQuestionByName("question1");
+    assert.equal(q.items[0].locTitle.renderedHtml, "text1", "There is no .");
+  }
+);
+QUnit.test(
+  "multipletext item is not readonly when survey is readonly, bug #1177",
+  function(assert) {
+    var json = {
+      mode: "display",
+      elements: [
+        {
+          type: "multipletext",
+          name: "question1",
+          items: [
+            {
+              name: "text1"
+            }
+          ]
+        }
+      ]
+    };
+    var survey = new SurveyModel(json);
+    var q = <QuestionMultipleTextModel>survey.getQuestionByName("question1");
+    assert.equal(q.items[0].editor.isReadOnly, true, "It should be readonly");
+  }
+);
+
+QUnit.test("space in others does not work correctly , bug #1214", function(
+  assert
+) {
+  var json = {
+    elements: [
+      {
+        type: "radiogroup",
+        name: "q1",
+        hasOther: true,
+        choices: ["high"],
+        storeOthersAsComment: false
+      }
+    ]
+  };
+  var survey = new SurveyModel(json);
+  var q = <QuestionRadiogroupModel>survey.getQuestionByName("q1");
+  q.value = q.otherItem.value;
+  assert.equal(q.isOtherSelected, true, "other is selected");
+  assert.equal(q.hasErrors(), true, "other is not entered");
+  q.comment = " ";
+  assert.equal(q.isOtherSelected, true, "other is still selected");
+  assert.equal(
+    q.hasErrors(),
+    true,
+    "other is not entered, whitespace doesn't count"
+  );
+});
+
+QUnit.test("Checkbox hasNone", function(assert) {
+  var json = {
+    elements: [
+      {
+        type: "checkbox",
+        name: "q1",
+        hasNone: true,
+        choices: [1, 2, 3, 4, 5]
+      }
+    ]
+  };
+  var survey = new SurveyModel(json);
+  var q = <QuestionCheckboxModel>survey.getQuestionByName("q1");
+  assert.equal(q.visibleChoices.length, 6, "5 items + none");
+  q.hasNone = false;
+  assert.equal(q.visibleChoices.length, 5, "none is removed");
+  q.hasNone = true;
+  assert.equal(q.visibleChoices.length, 6, "none is added");
+  q.value = [1, 2, "none"];
+  assert.deepEqual(q.value, ["none"], "we keep only none");
+  q.value = [1, "none"];
+  assert.deepEqual(q.value, [1], "none should gone");
 });

@@ -1,6 +1,7 @@
 import { ILocalizableOwner, LocalizableString } from "./localizablestring";
 import { JsonObject } from "./jsonobject";
 import { Helpers } from "./helpers";
+import { ConditionRunner } from "./conditions";
 
 /**
  * Array of ItemValue is used in checkox, dropdown and radiogroup choices, matrix columns and rows.
@@ -70,23 +71,82 @@ export class ItemValue {
     var item = ItemValue.getItemByValue(items, val);
     return item !== null ? item.locText.textOrHtml : "";
   }
-  public static NotifyArrayOnLocaleChanged(items: Array<ItemValue>) {
+  public static locStrsChanged(items: Array<ItemValue>) {
     for (var i = 0; i < items.length; i++) {
-      items[i].locText.onChanged();
+      items[i].locText.strChanged();
     }
+  }
+  public static runConditionsForItems(
+    items: Array<ItemValue>,
+    filteredItems: Array<ItemValue>,
+    runner: ConditionRunner,
+    values: any,
+    properties: any
+  ): boolean {
+    if (!values) {
+      values = {};
+    }
+    var itemValue = values["item"];
+    var choiceValue = values["choice"];
+    var hasChanded = false;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      values["item"] = item.value;
+      values["choice"] = item.value;
+      var itemRunner = !!item.getConditionRunner
+        ? item.getConditionRunner()
+        : false;
+      if (!itemRunner) {
+        itemRunner = runner;
+      }
+      var vis = true;
+      if (itemRunner) {
+        vis = itemRunner.run(values, properties);
+        if (vis) {
+          filteredItems.push(item);
+        }
+      } else {
+        filteredItems.push(item);
+      }
+      if (vis != item.isVisible) {
+        hasChanded = true;
+        if (!!item.setIsVisible) item.setIsVisible(vis);
+      }
+    }
+    if (itemValue) {
+      values["item"] = itemValue;
+    } else {
+      delete values["item"];
+    }
+    if (choiceValue) {
+      values["choice"] = choiceValue;
+    } else {
+      delete values["choice"];
+    }
+    return hasChanded;
   }
   private static itemValueProp = [
     "text",
     "value",
+    "visibleIfValue",
+    "visibleIf",
     "hasText",
     "locOwner",
     "locText",
     "isValueEmpty",
+    "isVisible",
+    "isVisibleValue",
     "locTextValue",
-    "pos"
+    "conditionRunner",
+    "pos",
+    "survey"
   ];
+  private visibleIfValue: string = "";
   private itemValue: any;
   private locTextValue: LocalizableString;
+  private isVisibleValue: boolean = true;
+  private conditionRunner: ConditionRunner;
+
   constructor(value: any, text: string = null) {
     this.locTextValue = new LocalizableString(null, true);
     var self = this;
@@ -122,6 +182,8 @@ export class ItemValue {
     if (index > -1) {
       this.itemValue = str.slice(0, index);
       this.text = str.slice(index + 1);
+    } else if (!this.hasText) {
+      this.locText.onChanged();
     }
   }
   public get hasText(): boolean {
@@ -136,11 +198,12 @@ export class ItemValue {
   public getData(): any {
     var customAttributes = this.getCustomAttributes();
     var textJson = this.locText.getJson();
-    if (!customAttributes && !textJson) return this.value;
+    if (!customAttributes && !textJson && !this.visibleIf) return this.value;
     var value = this.value;
     if (value && value["pos"]) delete value["pos"];
     var result = { value: value };
     if (textJson) result["text"] = textJson;
+    if (this.visibleIf) result["visibleIf"] = this.visibleIf;
     if (customAttributes) {
       for (var key in customAttributes) {
         result[key] = customAttributes[key];
@@ -154,12 +217,32 @@ export class ItemValue {
       if (this.isObjItemValue(value)) {
         value.itemValue = value.itemValue;
         this.locText.setJson(value.locText.getJson());
+        if (value.visibleIf) this.visibleIf = value.visibleIf;
         exception = ItemValue.itemValueProp;
       }
       this.copyAttributes(value, exception);
     } else {
       this.value = value;
     }
+  }
+  public get visibleIf(): string {
+    return this.visibleIfValue;
+  }
+  public set visibleIf(val: string) {
+    this.visibleIfValue = val;
+  }
+  public get isVisible() {
+    return this.isVisibleValue;
+  }
+  public setIsVisible(val: boolean) {
+    this.isVisibleValue = val;
+  }
+  public getConditionRunner(): ConditionRunner {
+    if (!this.visibleIf) return null;
+    if (!this.conditionRunner)
+      this.conditionRunner = new ConditionRunner(this.visibleIf);
+    this.conditionRunner.expression = this.visibleIf;
+    return this.conditionRunner;
   }
   private get isValueEmpty() {
     return !this.itemValue && this.itemValue !== 0 && this.itemValue !== false;
@@ -201,5 +284,6 @@ JsonObject.metaData.addClass("itemvalue", [
     onGetValue: function(obj: any) {
       return obj.locText.pureText;
     }
-  }
+  },
+  { name: "visibleIf:condition", visible: false }
 ]);

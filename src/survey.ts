@@ -28,7 +28,7 @@ import { ILocalizableOwner, LocalizableString } from "./localizablestring";
 import { StylesManager } from "./stylesmanager";
 import { SurveyTimer } from "./surveytimer";
 import { Question } from "./question";
-import {ItemValue} from "./itemvalue";
+import { ItemValue } from "./itemvalue";
 
 /**
  * Survey object contains information about the survey. Pages, Questions, flow logic and etc.
@@ -308,6 +308,7 @@ export class SurveyModel extends Base
   /**
    * Use this event to process the markdown text.
    * <br/> sender the survey object that fires the event
+   * <br/> options.element SurveyJS element where the string is going to be rendered. It is a question, panel, page or survey
    * <br/> options.text a text that is going to be rendered
    * <br/> options.html a html. It is null by default. Set it and survey will use it instead of options.text
    */
@@ -356,7 +357,7 @@ export class SurveyModel extends Base
    * <br/> sender the survey object that fires the event
    * name: name, content: content
    * <br/> name the question name
-   * <br/> value the question value
+   * <br/> content the question value
    * <br/> callback a call back function to get the status on downloading the file and the downloaded file content
    * @see downloadFile
    */
@@ -365,16 +366,29 @@ export class SurveyModel extends Base
     any
   > = new Event<(sender: SurveyModel, options: any) => any, any>();
   /**
-   * The event is fired after choices for radiogroup, checkbox and dropdown has been loaded from the RESTful service and before they are assign to the question. 
+   * The event is fired on clearing the value in QuestionFile. You may use it to remove files stored on your server. There are three properties in options: options.name, options.value and options.callback.
+   * <br/> sender the survey object that fires the event
+   * name: name, value: value
+   * <br/> name the question name
+   * <br/> value the question value
+   * <br/> callback a call back function to get the status on clearing the files operation
+   * @see clearFiles
+   */
+  public onClearFiles: Event<
+    (sender: SurveyModel, options: any) => any,
+    any
+  > = new Event<(sender: SurveyModel, options: any) => any, any>();
+  /**
+   * The event is fired after choices for radiogroup, checkbox and dropdown has been loaded from the RESTful service and before they are assign to the question.
    * You may change the choices, before it was assign or disable/enabled make visible/invisible question, based on loaded results
    * <br/> question - the question where loaded choices are going to be assigned
    * <br/> choices - the loaded choices. You may change them to assign the correct one
    * <br> serverResult - a result that comes from the server as it is.
    */
   public onLoadChoicesFromServer: Event<
-  (sender: SurveyModel, options: any) => any,
-  any
-> = new Event<(sender: SurveyModel, options: any) => any, any>();
+    (sender: SurveyModel, options: any) => any,
+    any
+  > = new Event<(sender: SurveyModel, options: any) => any, any>();
   /**
    * The event is fired before rendering a question. Use it to override the default question css classes.
    * There are two parameters in options: options.question and options.cssClasses
@@ -565,6 +579,21 @@ export class SurveyModel extends Base
     any
   > = new Event<(sender: SurveyModel, options: any) => any, any>();
   /**
+   * The event is fired when item value is changed in Panel Dynamic question.
+   * <br/> options.question - the panel question
+   * <br/> options.panel - the dynamic panel item
+   * <br/> options.name - the item name
+   * <br/> options.value - a new value
+   * <br/> options.itemIndex - the panel item index
+   * <br/> options.itemValue - the panel item object
+   * @see onDynamicPanelAdded
+   * @see QuestionPanelDynamicModel
+   */
+  public onDynamicPanelItemValueChanged: Event<
+    (sender: SurveyModel, options: any) => any,
+    any
+  > = new Event<(sender: SurveyModel, options: any) => any, any>();
+  /**
    * Use this event to define, if the answer on the question is correct or not.
    * <br/> sender the survey object that fires the event
    * <br/> options.question a question on which you have to decide if the answer is correct or not.
@@ -585,10 +614,7 @@ export class SurveyModel extends Base
   constructor(jsonObj: any = null) {
     super();
     var self = this;
-    var locTitleValue = this.createLocalizableString("title", this, true);
-    locTitleValue.onRenderedHtmlCallback = function(text) {
-      return self.processedTitle;
-    };
+    this.createLocalizableString("title", this, true);
     this.createLocalizableString("completedHtml", this);
     this.createLocalizableString("completedBeforeHtml", this);
     this.createLocalizableString("loadingHtml", this);
@@ -897,18 +923,23 @@ export class SurveyModel extends Base
     this.localeValue = value;
     this.setPropertyValue("locale", value);
     surveyLocalization.currentLocale = value;
-    for (var i = 0; i < this.pages.length; i++) {
-      this.pages[i].onLocaleChanged();
-    }
+    this.locStrsChanged();
   }
   //ILocalizableOwner
   getLocale() {
     return this.locale;
   }
+  public locStrsChanged() {
+    super.locStrsChanged();
+    if (this.currentPage) {
+      this.currentPage.locStrsChanged();
+    }
+  }
   public getMarkdownHtml(text: string) {
-    var options = { text: text, html: null };
-    this.onTextMarkdown.fire(this, options);
-    return options.html;
+    return this.getSurveyMarkdownHtml(this, text);
+  }
+  public getProcessedText(text: string) {
+    return this.processText(text, true);
   }
   getLocString(str: string) {
     return surveyLocalization.getString(str);
@@ -1103,7 +1134,7 @@ export class SurveyModel extends Base
    * Returns the text/html that renders as survey title.
    */
   public get processedTitle() {
-    return this.processText(this.locTitle.textOrHtml, true);
+    return this.locTitle.renderedHtml;
   }
   /**
    * Set this property to 'bottom' or 'left' to show question title under the question or on the left.
@@ -1154,19 +1185,35 @@ export class SurveyModel extends Base
   getAllValues(): any {
     return this.data;
   }
+  private conditionVersion = 0;
+  getFilteredValues(): any {
+    var values = {};
+    for (var key in this.variablesHash) values[key] = this.variablesHash[key];
+    for (var key in this.valuesHash) values[key] = this.valuesHash[key];
+    values["conditionVersion"] = ++this.conditionVersion;
+    return values;
+  }
+  getFilteredProperties(): any {
+    return { survey: this };
+  }
+
   public set data(data: any) {
     this.valuesHash = {};
     if (data) {
       for (var key in data) {
         this.setDataValueCore(this.valuesHash, key, data[key]);
-        this.checkTriggers(key, data[key], false);
       }
     }
+    this.checkTriggers(this.valuesHash, false);
     this.notifyAllQuestionsOnValueChanged();
+    this.notifyElementsOnAnyValueOrVariableChanged("");
     this.runConditions();
   }
   protected setDataValueCore(valuesHash: any, key: string, value: any) {
     valuesHash[key] = value;
+  }
+  protected deleteDataValueCore(valuesHash: any, key: string) {
+    delete valuesHash[key];
   }
   /**
    * Returns all comments from the data.
@@ -1373,6 +1420,9 @@ export class SurveyModel extends Base
     if (gotoFirstPage && this.visiblePageCount > 0) {
       this.currentPage = this.visiblePages[0];
     }
+    if (clearData) {
+      this.updateValuesWithDefaults();
+    }
   }
   public mergeValues(src: any, dest: any) {
     if (!dest || !src) return;
@@ -1383,6 +1433,15 @@ export class SurveyModel extends Base
         this.mergeValues(value, dest[key]);
       } else {
         dest[key] = value;
+      }
+    }
+  }
+  private updateValuesWithDefaults() {
+    if (this.isDesignMode || this.isLoading) return;
+    for (var i = 0; i < this.pages.length; i++) {
+      var questions = this.pages[0].questions;
+      for (var j = 0; j < questions.length; j++) {
+        questions[j].updateValueWithDefaults();
       }
     }
   }
@@ -1580,9 +1639,9 @@ export class SurveyModel extends Base
     for (var i = startIndex; i < this.pages.length; i++) {
       var page = this.pages[i];
       var panel = JsonObject.metaData.createClass("panel");
+      single.addPanel(panel);
       var json = new JsonObject().toJsonObject(page);
       new JsonObject().toObject(json, panel);
-      single.addPanel(panel);
     }
     return single;
   }
@@ -1695,7 +1754,7 @@ export class SurveyModel extends Base
         var question = self.getQuestionByName(name);
         if (question && question["errors"]) {
           hasErrors = true;
-          question["addError"](new CustomError(options.errors[name]));
+          question["addError"](new CustomError(options.errors[name], this));
         }
       }
     }
@@ -1818,7 +1877,7 @@ export class SurveyModel extends Base
   matrixCellValidate(question: IQuestion, options: any): SurveyError {
     options.question = question;
     this.onMatrixCellValidate.fire(this, options);
-    return options.error ? new CustomError(options.error) : null;
+    return options.error ? new CustomError(options.error, this) : null;
   }
   dynamicPanelAdded(question: IQuestion) {
     this.onDynamicPanelAdded.fire(this, { question: question });
@@ -1828,6 +1887,10 @@ export class SurveyModel extends Base
       question: question,
       panelIndex: panelIndex
     });
+  }
+  dynamicPanelItemValueChanged(question: IQuestion, options: any) {
+    options.question = question;
+    this.onDynamicPanelItemValueChanged.fire(this, options);
   }
 
   /**
@@ -1875,8 +1938,36 @@ export class SurveyModel extends Base
       callback: callback
     });
   }
-  updateChoicesFromServer(question: IQuestion, choices: Array<ItemValue>, serverResult: any): Array<ItemValue> {
-    var options = {question: question, choices: choices, serverResult: serverResult};
+  /**
+   * Clear files from server
+   * @param name question name
+   * @param value file question value
+   * @param callback a call back function to get the status of the clearing operation
+   */
+  public clearFiles(
+    name: string,
+    value: any,
+    callback: (status: string, data: any) => any
+  ) {
+    if (this.onClearFiles.isEmpty) {
+      !!callback && callback("success", value);
+    }
+    this.onClearFiles.fire(this, {
+      name: name,
+      value: value,
+      callback: callback
+    });
+  }
+  updateChoicesFromServer(
+    question: IQuestion,
+    choices: Array<ItemValue>,
+    serverResult: any
+  ): Array<ItemValue> {
+    var options = {
+      question: question,
+      choices: choices,
+      serverResult: serverResult
+    };
     this.onLoadChoicesFromServer.fire(this, options);
     return options.choices;
   }
@@ -2083,6 +2174,25 @@ export class SurveyModel extends Base
     return result;
   }
   /**
+   * Returns a panel by its name
+   * @param name a panel name
+   * @param caseInsensitive
+   * @see getQuestionByName
+   */
+  public getPanelByName(
+    name: string,
+    caseInsensitive: boolean = false
+  ): IPanel {
+    var panels = this.getAllPanels();
+    if (caseInsensitive) name = name.toLowerCase();
+    for (var i: number = 0; i < panels.length; i++) {
+      var panelName = panels[i].name;
+      if (caseInsensitive) panelName = panelName.toLowerCase();
+      if (panelName == name) return panels[i];
+    }
+    return null;
+  }
+  /**
    * Returns the list of all panels in the survey
    */
   public getAllPanels(
@@ -2099,6 +2209,7 @@ export class SurveyModel extends Base
     return new PageModel(name);
   }
   protected notifyQuestionOnValueChanged(valueName: string, newValue: any) {
+    if (this.isLoadingFromJson) return;
     var questions = this.getAllQuestions();
     var question = null;
     for (var i: number = 0; i < questions.length; i++) {
@@ -2127,6 +2238,7 @@ export class SurveyModel extends Base
     for (var i = 0; i < this.pages.length; i++) {
       this.pages[i].onAnyValueChanged(name);
     }
+    this.locStrsChanged();
   }
   private notifyAllQuestionsOnValueChanged() {
     var questions = this.getAllQuestions();
@@ -2142,11 +2254,13 @@ export class SurveyModel extends Base
   }
   private checkOnPageTriggers() {
     var questions = this.getCurrentPageQuestions();
+    var values = {};
     for (var i = 0; i < questions.length; i++) {
       var question = questions[i];
-      var value = this.getValue(question.getValueName());
-      this.checkTriggers(question.getValueName(), value, true);
+      var name = question.getValueName();
+      values[name] = this.getValue(name);
     }
+    this.checkTriggers(values, true);
   }
   private getCurrentPageQuestions(): Array<QuestionBase> {
     var result = [];
@@ -2159,15 +2273,13 @@ export class SurveyModel extends Base
     }
     return result;
   }
-  private checkTriggers(name: string, newValue: any, isOnNextPage: boolean) {
-    var processValue = new ProcessValue();
+  private checkTriggers(key: any, isOnNextPage: boolean) {
+    var values = this.getFilteredValues();
+    var properties = this.getFilteredProperties();
     for (var i: number = 0; i < this.triggers.length; i++) {
       var trigger = this.triggers[i];
-      var firstName = processValue.getFirstName(trigger.name);
-      if (firstName == name && trigger.isOnNextPage == isOnNextPage) {
-        var values = {};
-        values[firstName] = newValue;
-        trigger.check(processValue.getValue(trigger.name, values));
+      if (trigger.isOnNextPage == isOnNextPage) {
+        trigger.checkExpression(key, values, properties);
       }
     }
   }
@@ -2176,21 +2288,12 @@ export class SurveyModel extends Base
       this.pages[i].onSurveyLoad();
     }
   }
-  private runConditionsState = "";
   private runConditions() {
-    this.runConditionsState = "running";
     var pages = this.pages;
-    var values = {};
-    for (var key in this.variablesHash) values[key] = this.variablesHash[key];
-    for (var key in this.valuesHash) values[key] = this.valuesHash[key];
-    var properties = {survey: this};
+    var values = this.getFilteredValues();
+    var properties = this.getFilteredProperties();
     for (var i = 0; i < pages.length; i++) {
       pages[i].runCondition(values, properties);
-    }
-    var needUpdateIndexes = this.runConditionsState === "visibleIndexesChanged";
-    this.runConditionsState = "";
-    if (needUpdateIndexes) {
-      this.updateVisibleIndexes();
     }
   }
   /**
@@ -2331,10 +2434,6 @@ export class SurveyModel extends Base
     }
   }
   private updateVisibleIndexes() {
-    if (this.runConditionsState == "running") {
-      this.runConditionsState = "visibleIndexesChanged";
-    }
-    if (this.runConditionsState) return;
     this.updatePageVisibleIndexes(this.showPageNumbers);
     if (this.showQuestionNumbers == "onPage") {
       var visPages = this.visiblePages;
@@ -2422,7 +2521,7 @@ export class SurveyModel extends Base
       name = name.toLocaleLowerCase();
       var values = {};
       values[firstName] = textValue.returnDisplayValue
-        ? question.displayValue
+        ? question.getDisplayValue(false)
         : question.value;
       textValue.value = new ProcessValue().getValue(name, values);
       return;
@@ -2463,6 +2562,7 @@ export class SurveyModel extends Base
    */
   public getVariable(name: string): any {
     if (!name) return null;
+    name = name.toLowerCase();
     return this.variablesHash[name];
   }
   /**
@@ -2473,6 +2573,7 @@ export class SurveyModel extends Base
    */
   public setVariable(name: string, newValue: any) {
     if (!name) return;
+    name = name.toLowerCase();
     this.variablesHash[name] = newValue;
     this.notifyElementsOnAnyValueOrVariableChanged(name);
     this.runConditions();
@@ -2505,13 +2606,15 @@ export class SurveyModel extends Base
   public setValue(name: string, newValue: any) {
     if (this.isValueEqual(name, newValue)) return;
     if (this.isValueEmpty(newValue)) {
-      delete this.valuesHash[name];
+      this.deleteDataValueCore(this.valuesHash, name);
     } else {
       newValue = this.getUnbindValue(newValue);
       this.setDataValueCore(this.valuesHash, name, newValue);
     }
     this.notifyQuestionOnValueChanged(name, newValue);
-    this.checkTriggers(name, newValue, false);
+    var triggerKeys = {};
+    triggerKeys[name] = newValue;
+    this.checkTriggers(triggerKeys, false);
     this.runConditions();
     this.tryGoNextPageAutomatic(name);
   }
@@ -2576,7 +2679,7 @@ export class SurveyModel extends Base
   public setComment(name: string, newValue: string) {
     var commentName = name + this.commentPrefix;
     if (newValue === "" || newValue === null) {
-      delete this.valuesHash[commentName];
+      this.deleteDataValueCore(this.valuesHash, commentName);
     } else {
       this.setDataValueCore(this.valuesHash, commentName, newValue);
       this.tryGoNextPageAutomatic(name);
@@ -2677,7 +2780,7 @@ export class SurveyModel extends Base
       error: null
     };
     this.onValidateQuestion.fire(this, options);
-    return options.error ? new CustomError(options.error) : null;
+    return options.error ? new CustomError(options.error, this) : null;
   }
   validatePanel(panel: IPanel): SurveyError {
     if (this.onValidatePanel.isEmpty) return null;
@@ -2687,7 +2790,7 @@ export class SurveyModel extends Base
       error: null
     };
     this.onValidatePanel.fire(this, options);
-    return options.error ? new CustomError(options.error) : null;
+    return options.error ? new CustomError(options.error, this) : null;
   }
   processHtml(html: string): string {
     var options = { html: html };
@@ -2704,6 +2807,11 @@ export class SurveyModel extends Base
     };
     res.hasAllValuesOnLastRun = this.textPreProcessor.hasAllValuesOnLastRun;
     return res;
+  }
+  getSurveyMarkdownHtml(element: Base, text: string): string {
+    var options = { element: element, text: text, html: null };
+    this.onTextMarkdown.fire(this, options);
+    return options.html;
   }
   /**
    * Returns the number of corrected answers on quiz

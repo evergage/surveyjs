@@ -30,7 +30,6 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
   public static MaxRowCount = 100;
   private rowCounter = 0;
   private rowCountValue: number = 2;
-  rowCountChangedCallback: () => void;
 
   constructor(public name: string) {
     super(name);
@@ -41,6 +40,9 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
   }
   public getType(): string {
     return "matrixdynamic";
+  }
+  public get isRowsDynamic(): boolean {
+    return true;
   }
   /**
    * Set it to true, to show a confirmation dialog on removing a row
@@ -61,6 +63,36 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
   }
   public set keyName(val: string) {
     this.setPropertyValue("keyName", val);
+  }
+  /**
+   * If it is not empty, then this value is set to every new row, including rows created initially, unless the defaultValue is not empty
+   * @see defaultValue
+   */
+  public get defaultRowValue(): any {
+    return this.getPropertyValue("defaultRowValue");
+  }
+  public set defaultRowValue(val: any) {
+    this.setPropertyValue("defaultRowValue", val);
+  }
+  protected isDefaultValueEmpty(): boolean {
+    return (
+      super.isDefaultValueEmpty() && this.isValueEmpty(this.defaultRowValue)
+    );
+  }
+  protected setDefaultValue() {
+    if (
+      this.isValueEmpty(this.defaultRowValue) ||
+      !this.isValueEmpty(this.defaultValue)
+    ) {
+      super.setDefaultValue();
+      return;
+    }
+    if (!this.isEmpty() || this.rowCount == 0) return;
+    var newValue = [];
+    for (var i = 0; i < this.rowCount; i++) {
+      newValue.push(this.defaultRowValue);
+    }
+    this.value = newValue;
   }
   /**
    * The number of rows in the matrix.
@@ -86,7 +118,7 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
         this.generatedVisibleRows.push(this.createMatrixRow(null));
       }
     }
-    this.fireCallback(this.rowCountChangedCallback);
+    this.fireCallback(this.visibleRowsChangedCallback);
   }
   /**
    * The minimum row count. A user could not delete a row if the rowCount equals to minRowCount
@@ -98,8 +130,8 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
   }
   public set minRowCount(val: number) {
     if (val < 0) val = 0;
-    if (val == this.minRowCount || val > this.maxRowCount) return;
     this.setPropertyValue("minRowCount", val);
+    if (val > this.maxRowCount) this.maxRowCount = val;
     if (this.rowCount < val) this.rowCount = val;
   }
   /**
@@ -117,8 +149,9 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
     if (val <= 0) return;
     if (val > QuestionMatrixDynamicModel.MaxRowCount)
       val = QuestionMatrixDynamicModel.MaxRowCount;
-    if (val == this.maxRowCount || val < this.minRowCount) return;
+    if (val == this.maxRowCount) return;
     this.setPropertyValue("maxRowCount", val);
+    if (val < this.minRowCount) this.minRowCount = val;
     if (this.rowCount > val) this.rowCount = val;
   }
   /**
@@ -128,7 +161,7 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
    * @see rowCount
    */
   public get canAddRow(): boolean {
-    return this.rowCount < this.maxRowCount;
+    return !this.isReadOnly && this.rowCount < this.maxRowCount;
   }
   /**
    * Returns true, if a row can be removed.
@@ -137,7 +170,7 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
    * @see rowCount
    */
   public get canRemoveRow(): boolean {
-    return this.rowCount > this.minRowCount;
+    return !this.isReadOnly && this.rowCount > this.minRowCount;
   }
   /**
    * Creates and add a new row.
@@ -146,9 +179,18 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
     if (!this.canAddRow) return;
     var prevRowCount = this.rowCount;
     this.rowCount = this.rowCount + 1;
+    if (!this.isValueEmpty(this.defaultRowValue)) {
+      var newValue = this.createNewValue(this.value);
+      if (newValue.length == this.rowCount) {
+        newValue[newValue.length - 1] = this.defaultRowValue;
+        this.value = newValue;
+      }
+    }
     if (this.data) {
-      var properties = { survey: this.survey };
-      this.runCellsCondition(this.data.getAllValues(), properties);
+      this.runCellsCondition(
+        this.getDataFilteredValues(),
+        this.getDataFilteredProperties()
+      );
     }
     if (this.survey) {
       if (prevRowCount + 1 == this.rowCount) this.survey.matrixRowAdded(this);
@@ -188,7 +230,7 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
       this.value = val;
     }
     this.rowCountValue--;
-    this.fireCallback(this.rowCountChangedCallback);
+    this.fireCallback(this.visibleRowsChangedCallback);
   }
   /**
    * Use this property to change the default text showing in the confirmation delete dialog on removing a row.
@@ -226,9 +268,10 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
    * Use this property to change the default value of add row button text.
    */
   public get addRowText() {
+    var defaultLocName = this.isColumnLayoutHorizontal ? "addRow" : "addColumn";
     return this.getLocalizableStringText(
       "addRowText",
-      surveyLocalization.getString("addRow")
+      surveyLocalization.getString(defaultLocName)
     );
   }
   public set addRowText(val: string) {
@@ -236,6 +279,29 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
   }
   get locAddRowText() {
     return this.getLocalizableString("addRowText");
+  }
+  /**
+   * By default the 'Add Row' button is shown on bottom if columnLayout is horizontal and on top if columnLayout is vertical. <br/>
+   * You may set it to "top", "bottom" or "topBottom" (to show on top and bottom).
+   * @see columnLayout
+   */
+  public get addRowLocation(): string {
+    return this.getPropertyValue("addRowLocation", "default");
+  }
+  public set addRowLocation(val: string) {
+    this.setPropertyValue("addRowLocation", val);
+  }
+  public get isAddRowOnTop() {
+    if (!this.canAddRow) return false;
+    if (this.addRowLocation === "default")
+      return this.columnLayout === "vertical";
+    return this.addRowLocation !== "bottom";
+  }
+  public get isAddRowOnBottom() {
+    if (!this.canAddRow) return false;
+    if (this.addRowLocation === "default")
+      return this.columnLayout === "horizontal";
+    return this.addRowLocation !== "top";
   }
   /**
    * Use this property to change the default value of remove row button text.
@@ -252,7 +318,7 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
   get locRemoveRowText() {
     return this.getLocalizableString("removeRowText");
   }
-  public get displayValue(): any {
+  protected getDisplayValueCore(keysAsText: boolean): any {
     var values = this.value;
     if (!values) return values;
     var rows = this.visibleRows;
@@ -327,7 +393,7 @@ export class QuestionMatrixDynamicModel extends QuestionMatrixDropdownModelBase
     var value = question.value;
     for (var i = 0; i < keyValues.length; i++) {
       if (value == keyValues[i]) {
-        question.addError(new CustomError(this.keyDuplicationError));
+        question.addError(new CustomError(this.keyDuplicationError, this));
         return true;
       }
     }
@@ -413,10 +479,16 @@ JsonObject.metaData.addClass(
       name: "keyDuplicationError",
       serializationProperty: "locKeyDuplicationError"
     },
+    "defaultRowValue:rowvalue",
     { name: "confirmDelete:boolean" },
     {
       name: "confirmDeleteText",
       serializationProperty: "locConfirmDeleteText"
+    },
+    {
+      name: "addRowLocation",
+      default: "default",
+      choices: ["default", "top", "bottom", "topBottom"]
     },
     { name: "addRowText", serializationProperty: "locAddRowText" },
     { name: "removeRowText", serializationProperty: "locRemoveRowText" }

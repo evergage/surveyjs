@@ -18,7 +18,9 @@ export default QUnit.module("choicesRestfull");
 
 class ChoicesRestfullTester extends ChoicesRestfull {
   public noCaching: boolean = false;
+  public lastProcesedUrl: string;
   protected sendRequest() {
+    this.lastProcesedUrl = this.processedUrl;
     if (this.processedUrl.indexOf("countries") > -1)
       this.onLoad(getCountries());
     if (this.processedUrl.indexOf("ca_cities") > -1) this.onLoad(getCACities());
@@ -44,8 +46,14 @@ class TextProcessorTester implements ITextProcessor {
 }
 
 class QuestionDropdownModelTester extends QuestionDropdownModel {
+  oldGetResultCallback: any;
   constructor(name: string) {
     super(name);
+    this.oldGetResultCallback = this.choicesByUrl.getResultCallback;
+    var self = this;
+    this.choicesByUrl.getResultCallback = function(items: Array<ItemValue>) {
+      self.newGetResultCallback(items);
+    };
   }
   public getType(): string {
     return "dropdownrestfulltester";
@@ -54,6 +62,20 @@ class QuestionDropdownModelTester extends QuestionDropdownModel {
     var res = new ChoicesRestfullTester();
     res.noCaching = true;
     return res;
+  }
+  public hasItemsCallbackDelay: boolean = false;
+  private loadedItems: Array<ItemValue>;
+  public doResultsCallback() {
+    if (this.loadedItems) {
+      this.oldGetResultCallback(this.loadedItems);
+    }
+    this.loadedItems = null;
+  }
+  protected newGetResultCallback(items: Array<ItemValue>) {
+    this.loadedItems = items;
+    if (!this.hasItemsCallbackDelay) {
+      this.doResultsCallback();
+    }
   }
   processor: ITextProcessor;
   protected get textProcessor(): ITextProcessor {
@@ -318,6 +340,38 @@ QUnit.test("onLoadItemsFromServer event", function(assert) {
   assert.equal(question.visible, false, "And it is again invisible");
 });
 
+QUnit.test("Set value before loading data, bug #1089", function(assert) {
+  var survey = new SurveyModel();
+  survey.addNewPage("1");
+  var question = new QuestionDropdownModelTester("q1");
+  question.choicesByUrl.url = "{state}";
+  survey.pages[0].addQuestion(question);
+  question.hasItemsCallbackDelay = true;
+  question.onSurveyLoad();
+  survey.setValue("q1", "CA");
+  question.doResultsCallback();
+  assert.equal(question.value, "CA", "'CA' value is still here");
+});
+
+QUnit.test(
+  "Set value before loading data + storeOthersAsComment, bug #1089",
+  function(assert) {
+    var survey = new SurveyModel();
+    survey.addNewPage("1");
+    var question = new QuestionDropdownModelTester("q1");
+    survey.storeOthersAsComment = false;
+    question.choicesByUrl.url = "{state}";
+    survey.pages[0].addQuestion(question);
+    question.hasItemsCallbackDelay = true;
+    question.onSurveyLoad();
+    survey.setValue("q1", "CA");
+    assert.equal(question.isOtherSelected, false, "There shuld not be other#1");
+    question.doResultsCallback();
+    assert.equal(question.isOtherSelected, false, "There shuld not be other#2");
+    assert.equal(question.value, "CA", "'CA' value is still here");
+  }
+);
+
 QUnit.test("Use values and not text, Bug #627", function(assert) {
   var survey = new SurveyModel();
   survey.addNewPage("1");
@@ -484,6 +538,24 @@ QUnit.test(
     );
     survey.clearValue("state");
     assert.equal(qCity.visibleChoices.length, 0, "It is empty again");
+  }
+);
+
+QUnit.test(
+  "Question in panel dynamic where url is depend on value outside panel, bug#1089",
+  function(assert) {
+    var survey = new SurveyModel();
+    var page = survey.addNewPage("1");
+    var dropDown = new QuestionDropdownModelTester("q1");
+    dropDown.choicesByUrl.url = "{state}";
+    page.addQuestion(dropDown);
+    assert.equal(dropDown.visibleChoices.length, 0, "It is empty");
+    survey.data = { state: "ca_cities" };
+    assert.equal(
+      dropDown.visibleChoices.length,
+      2,
+      "We have two cities now, CA"
+    );
   }
 );
 

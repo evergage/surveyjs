@@ -43,11 +43,14 @@ export class QuestionPanelDynamicItem
     ) {
       self.getProcessedTextValue(textValue);
     };
-    this.panel.setSurveyImpl(this);
+    this.setSurveyImpl();
     this.panel.updateCustomWidgets();
   }
   public get panel(): PanelModel {
     return this.panelValue;
+  }
+  public setSurveyImpl() {
+    this.panel.setSurveyImpl(this);
   }
   public runCondition(values: HashTable<any>, properties: HashTable<any>) {
     this.panel.runCondition(values, properties);
@@ -84,6 +87,17 @@ export class QuestionPanelDynamicItem
 
   getAllValues(): any {
     return this.data.getPanelItemData(this);
+  }
+  getFilteredValues(): any {
+    var allValues = this.getAllValues();
+    var values: { [key: string]: any } = { panel: allValues };
+    for (var key in allValues) {
+      values[key] = allValues[key];
+    }
+    return values;
+  }
+  getFilteredProperties(): any {
+    return { survey: this.getSurvey() };
   }
   geSurveyData(): ISurveyData {
     return this;
@@ -496,7 +510,11 @@ export class QuestionPanelDynamicModel extends Question
       var newItem = this.createNewItem();
       this.items.push(newItem);
       if (this.renderMode == "list" && this.panelsState != "default") {
-        newItem.panel.expand();
+        if (this.panelsState === "expand") {
+          newItem.panel.expand();
+        } else {
+          newItem.panel.collapse();
+        }
       }
     }
     if (val < this.panelCount) this.items.splice(val, this.panelCount - val);
@@ -518,6 +536,11 @@ export class QuestionPanelDynamicModel extends Question
   }
   public set panelsState(val: string) {
     this.setPropertyValue("panelsState", val);
+  }
+  private setPanelsSurveyImpl() {
+    for (var i = 0; i < this.items.length; i++) {
+      this.items[i].setSurveyImpl();
+    }
   }
   private setPanelsState() {
     if (this.isDesignMode || this.renderMode != "list") return;
@@ -548,8 +571,9 @@ export class QuestionPanelDynamicModel extends Question
   }
   public set minPanelCount(val: number) {
     if (val < 0) val = 0;
-    if (val == this.minPanelCount || val > this.maxPanelCount) return;
+    if (val == this.minPanelCount) return;
     this.setPropertyValue("minPanelCount", val);
+    if (val > this.maxPanelCount) this.maxPanelCount = val;
     if (this.panelCount < val) this.panelCount = val;
   }
   /**
@@ -567,8 +591,9 @@ export class QuestionPanelDynamicModel extends Question
     if (val <= 0) return;
     if (val > QuestionPanelDynamicModel.MaxPanelCount)
       val = QuestionPanelDynamicModel.MaxPanelCount;
-    if (val == this.maxPanelCount || val < this.minPanelCount) return;
+    if (val == this.maxPanelCount) return;
     this.setPropertyValue("maxPanelCount", val);
+    if (val < this.minPanelCount) this.minPanelCount = val;
     if (this.panelCount > val) this.panelCount = val;
   }
   /**
@@ -714,6 +739,51 @@ export class QuestionPanelDynamicModel extends Question
     }
   }
   /**
+   * If it is not empty, then this value is set to every new panel, including panels created initially, unless the defaultValue is not empty
+   * @see defaultValue
+   */
+  public get defaultPanelValue(): any {
+    return this.getPropertyValue("defaultPanelValue");
+  }
+  public set defaultPanelValue(val: any) {
+    this.setPropertyValue("defaultPanelValue", val);
+  }
+  protected isDefaultValueEmpty(): boolean {
+    return (
+      super.isDefaultValueEmpty() && this.isValueEmpty(this.defaultPanelValue)
+    );
+  }
+  protected setDefaultValue() {
+    if (
+      this.isValueEmpty(this.defaultPanelValue) ||
+      !this.isValueEmpty(this.defaultValue)
+    ) {
+      super.setDefaultValue();
+      return;
+    }
+    if (!this.isEmpty() || this.panelCount == 0) return;
+    var newValue = [];
+    for (var i = 0; i < this.panelCount; i++) {
+      newValue.push(this.defaultPanelValue);
+    }
+    this.value = newValue;
+  }
+  public isEmpty(): boolean {
+    var val = this.value;
+    if (!val || !Array.isArray(val)) return true;
+    for (var i = 0; i < val.length; i++) {
+      if (!this.isRowEmpty(val[i])) return false;
+    }
+    return true;
+  }
+  private isRowEmpty(val: any) {
+    for (var prop in val) {
+      if (val.hasOwnProperty(prop)) return false;
+    }
+    return true;
+  }
+
+  /**
    * Add a new dynamic panel based on the template Panel. It checks if canAddPanel returns true and then calls addPanel method.
    * @see template
    * @see panelCount
@@ -722,7 +792,11 @@ export class QuestionPanelDynamicModel extends Question
    */
   public addPanelUI(): PanelModel {
     if (!this.canAddPanel) return null;
-    return this.addPanel();
+    var newPanel = this.addPanel();
+    if (this.renderMode === "list" && this.panelsState !== "default") {
+      newPanel.expand();
+    }
+    return newPanel;
   }
   /**
    * Add a new dynamic panel based on the template Panel.
@@ -734,6 +808,17 @@ export class QuestionPanelDynamicModel extends Question
     this.panelCount++;
     if (!this.isRenderModeList) {
       this.currentIndex = this.panelCount - 1;
+    }
+    if (!this.isValueEmpty(this.defaultPanelValue)) {
+      var newValue = this.value;
+      if (
+        newValue &&
+        Array.isArray(newValue) &&
+        newValue.length == this.panelCount
+      ) {
+        newValue[newValue.length - 1] = this.defaultPanelValue;
+      }
+      this.value = newValue;
     }
     if (this.survey) this.survey.dynamicPanelAdded(this);
     return this.items[this.panelCount - 1].panel;
@@ -779,6 +864,13 @@ export class QuestionPanelDynamicModel extends Question
       if (this.items[i] === val || this.items[i].panel === val) return i;
     }
     return -1;
+  }
+  public locStrsChanged() {
+    super.locStrsChanged();
+    var panels = this.panels;
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].locStrsChanged();
+    }
   }
   public clearIncorrectValues() {
     for (var i = 0; i < this.panels.length; i++) {
@@ -833,6 +925,7 @@ export class QuestionPanelDynamicModel extends Question
     if (this.isDesignMode) {
       this.rebuildPanels();
     }
+    this.setPanelsSurveyImpl();
     this.setPanelsState();
     super.onSurveyLoad();
   }
@@ -842,10 +935,15 @@ export class QuestionPanelDynamicModel extends Question
   }
   private reRunCondition() {
     if (!this.data) return;
-    var properties = { survey: this.survey};
-    this.runCondition(this.data.getAllValues(), properties);
+    this.runCondition(
+      this.getDataFilteredValues(),
+      this.getDataFilteredProperties()
+    );
   }
-  protected runPanelsCondition(values: HashTable<any>, properties: HashTable<any>) {
+  protected runPanelsCondition(
+    values: HashTable<any>,
+    properties: HashTable<any>
+  ) {
     var newValues = {};
     if (values && values instanceof Object) {
       newValues = JSON.parse(JSON.stringify(values));
@@ -917,7 +1015,7 @@ export class QuestionPanelDynamicModel extends Question
     var value = question.value;
     for (var i = 0; i < keyValues.length; i++) {
       if (value == keyValues[i]) {
-        question.addError(new CustomError(this.keyDuplicationError));
+        question.addError(new CustomError(this.keyDuplicationError, this));
         return true;
       }
     }
@@ -989,7 +1087,7 @@ export class QuestionPanelDynamicModel extends Question
       Array.isArray(qValue) &&
       qValue.length > this.items.length
     ) {
-      index = qValue.length - 1;
+      index = this.items.length;
     }
     if (index < 0) return {};
     if (!qValue || !Array.isArray(qValue) || qValue.length <= index) return {};
@@ -1016,6 +1114,17 @@ export class QuestionPanelDynamicModel extends Question
     this.isValueChangingInternally = true;
     this.value = qValue;
     this.isValueChangingInternally = false;
+    if (this.survey) {
+      var options = {
+        question: this,
+        panel: item.panel,
+        name: name,
+        itemIndex: index,
+        itemValue: qValue[index],
+        value: val
+      };
+      this.survey.dynamicPanelItemValueChanged(this, options);
+    }
   }
   getSurvey(): ISurvey {
     return this.survey;
@@ -1043,6 +1152,7 @@ JsonObject.metaData.addClass(
       name: "maxPanelCount:number",
       default: QuestionPanelDynamicModel.MaxPanelCount
     },
+    "defaultPanelValue:panelvalue",
     {
       name: "panelsState",
       default: "default",

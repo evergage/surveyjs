@@ -1,17 +1,17 @@
 import { surveyCss } from "./cssstandard";
 
 export var defaultBootstrapCss = {
-  root: "sv_bootstrap_css",
+  root: "sv_main sv_bootstrap_css",
   header: "panel-heading card-header",
-  body: "panel-body card-block",
+  body: "panel-body card-block mt-4",
   footer: "panel-footer card-footer",
   navigationButton: "",
   completedPage: "",
   navigation: {
-    complete: "sv_complete_btn",
-    prev: "sv_prev_btn",
-    next: "sv_next_btn",
-    start: "sv_start_btn"
+    complete: "btn sv_complete_btn",
+    prev: "btn sv_prev_btn",
+    next: "btn sv_next_btn",
+    start: "btn sv_start_btn"
   },
   progress: "progress center-block mx-auto mb-4",
   progressBar: "progress-bar",
@@ -44,12 +44,18 @@ export var defaultBootstrapCss = {
     item: ""
   },
 
-  boolean: { root: "sv_qbln form-inline checkbox", item: "", label: "" },
+  boolean: {
+    root: "sv_qbln form-inline checkbox",
+    item: "",
+    label: "",
+    materialDecorator: "checkbox-material"
+  },
   checkbox: {
     root: "sv_qcbc sv_qcbx form-inline",
     item: "checkbox",
     itemControl: "",
     controlLabel: "",
+    materialDecorator: "checkbox-material",
     other: "sv_q_checkbox_other"
   },
   comment: "form-control",
@@ -67,7 +73,14 @@ export var defaultBootstrapCss = {
     buttonAdd: "",
     buttonRemove: ""
   },
-  paneldynamic: { root: "", button: "button" },
+  paneldynamic: {
+    root: "",
+    button: "button",
+    buttonPrev: "",
+    buttonNext: "",
+    buttonAdd: "",
+    buttonRemove: ""
+  },
   multipletext: {
     root: "table",
     itemTitle: "",
@@ -79,7 +92,18 @@ export var defaultBootstrapCss = {
     label: "",
     itemControl: "",
     controlLabel: "",
-    other: "sv_q_radiogroup_other"
+    materialDecorator: "circle",
+    other: "sv_q_radiogroup_other",
+    clearButton: "sv_q_radiogroup_clear button"
+  },
+  imagepicker: {
+    root: "sv_imgsel",
+    item: "sv_q_imgsel",
+    label: "sv_q_imgsel_label",
+    itemControl: "sv_q_imgsel_control_item",
+    image: "sv_q_imgsel_image",
+    itemText: "sv_q_imgsel_text",
+    clearButton: "sv_q_radiogroup_clear"
   },
   rating: {
     root: "btn-group",

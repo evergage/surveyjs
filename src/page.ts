@@ -20,6 +20,11 @@ export class PageModel extends PanelModelBase implements IPage {
   private hasShownValue: boolean = false;
   constructor(public name: string = "") {
     super(name);
+    var self = this;
+    this.locTitle.onRenderedHtmlCallback = function(text) {
+      if (self.num > 0) return self.num + ". " + text;
+      return text;
+    };
   }
   public getType(): string {
     return "page";
@@ -66,13 +71,6 @@ export class PageModel extends PanelModelBase implements IPage {
   public set navigationButtonsVisibility(val: string) {
     this.setPropertyValue("navigationButtonsVisibility", val.toLowerCase());
   }
-  protected getRenderedTitle(str: string): string {
-    str = super.getRenderedTitle(str);
-    if (this.num > 0) {
-      str = this.num + ". " + str;
-    }
-    return str;
-  }
   /**
    * The property returns true, if the page has been shown to the end-user.
    */
@@ -83,7 +81,7 @@ export class PageModel extends PanelModelBase implements IPage {
     return this.wasShown;
   }
   public setWasShown(val: boolean) {
-    if (this.survey.isDesignMode) return;
+    if (this.isDesignMode) return;
     if (val == this.hasShownValue) return;
     if (val == true && this.areQuestionsRandomized) {
       this.randomizeElements();

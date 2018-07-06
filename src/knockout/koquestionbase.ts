@@ -51,7 +51,7 @@ export class QuestionImplementorBase {
     });
     this.question["koRootClass"] = ko.pureComputed(function() {
       var result = self.question.cssClasses.mainRoot;
-      if (self.question.survey.questionTitleLocation === "left") {
+      if (self.question.getTitleLocation() === "left") {
         result += " sv_qstn_left";
       }
       if (self.koErrors().length > 0) {
@@ -72,6 +72,9 @@ export class QuestionImplementorBase {
     this.koPaddingLeft(this.getIndentSize(this.question.indent));
     this.koPaddingRight(this.getIndentSize(this.question.rightIndent));
   }
+  protected getQuestionTemplate(): string {
+    return this.question.getTemplate();
+  }
   private getIndentSize(indent: number): string {
     if (indent < 1) return "";
     return indent * this.question.cssClasses.indent + "px";
@@ -82,6 +85,6 @@ export class QuestionImplementorBase {
       !this.question.customWidget.widgetJson.isDefaultRender
     )
       return "survey-widget-" + this.question.customWidget.name;
-    return "survey-question-" + this.question.getTemplate();
+    return "survey-question-" + this.getQuestionTemplate();
   }
 }

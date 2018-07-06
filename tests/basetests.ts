@@ -146,6 +146,14 @@ QUnit.test("ItemValue.getData()", function(assert) {
     [{ value: 7, text: "Item 1" }, 5, "item"],
     "convert some items to simple values"
   );
+  var item = new ItemValue(1);
+  assert.equal(item.getData(), 1, "Just value");
+  item.visibleIf = "{item}=1";
+  assert.deepEqual(
+    item.getData(),
+    { value: 1, visibleIf: "{item}=1" },
+    "Object value + visibleIf"
+  );
 });
 QUnit.test("ItemValue.getItemByValue()", function(assert) {
   var items = new Array<ItemValue>();
@@ -194,6 +202,9 @@ class BaseTester extends Base implements ILocalizableOwner {
     return "en";
   }
   getMarkdownHtml(text: string): string {
+    return text;
+  }
+  getProcessedText(text: string): string {
     return text;
   }
 }

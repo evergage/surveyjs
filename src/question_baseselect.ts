@@ -2,18 +2,20 @@ import { JsonObject } from "./jsonobject";
 import { Question } from "./question";
 import { SurveyError, ISurveyImpl } from "./base";
 import { ItemValue } from "./itemvalue";
-import { Helpers } from "./helpers";
+import { Helpers, HashTable } from "./helpers";
 import { surveyLocalization } from "./surveyStrings";
 import { CustomError } from "./error";
 import { ChoicesRestfull } from "./choicesRestfull";
 import { LocalizableString } from "./localizablestring";
-import { setFlagsFromString } from "v8";
+import { ConditionRunner } from "./conditions";
 
 /**
  * It is a base class for checkbox, dropdown and radiogroup questions.
  */
 export class QuestionSelectBase extends Question {
   private visibleChoicesCache: Array<ItemValue> = null;
+  private filteredChoicesValue: Array<ItemValue> = null;
+  private conditionChoicesVisibleIfRunner: ConditionRunner;
   private commentValue: string;
   private otherItemValue: ItemValue = new ItemValue("other");
   protected cachedValue: any;
@@ -30,6 +32,11 @@ export class QuestionSelectBase extends Question {
     super(name);
     var self = this;
     this.choicesValues = this.createItemValues("choices");
+    this.registerFunctionOnPropertyValueChanged("choices", function() {
+      if (!self.filterItems()) {
+        self.onVisibleChoicesChanged();
+      }
+    });
     this.choicesByUrl = this.createRestfull();
     this.choicesByUrl.owner = this;
     var locOtherText = this.createLocalizableString("otherText", this, true);
@@ -54,6 +61,7 @@ export class QuestionSelectBase extends Question {
   }
   /**
    * Returns the other item. By using this property, you may change programmatically it's value and text.
+   * @see hasOther
    */
   public get otherItem(): ItemValue {
     return this.otherItemValue;
@@ -65,6 +73,74 @@ export class QuestionSelectBase extends Question {
     return this.getStoreOthersAsComment()
       ? this.getHasOther(this.value)
       : this.getHasOther(this.cachedValue);
+  }
+  /**
+   * An expression that returns true or false. It runs against each choices item and if for this item it returns true, then the item is visible otherwise the item becomes invisible. Please use {item} to get the current item value in the expression.
+   * @see visibleIf
+   */
+  public get choicesVisibleIf(): string {
+    return this.getPropertyValue("choicesVisibleIf", "");
+  }
+  public set choicesVisibleIf(val: string) {
+    this.setPropertyValue("choicesVisibleIf", val);
+    this.filterItems();
+  }
+  public runCondition(values: HashTable<any>, properties: HashTable<any>) {
+    super.runCondition(values, properties);
+    this.runItemsCondition(values, properties);
+  }
+  protected filterItems(): boolean {
+    if (this.isLoadingFromJson || !this.data || this.isDesignMode) return false;
+    return this.runItemsCondition(
+      this.getDataFilteredValues(),
+      this.getDataFilteredProperties()
+    );
+  }
+  protected runItemsCondition(
+    values: HashTable<any>,
+    properties: HashTable<any>
+  ): boolean {
+    this.setConditionalChoicesRunner();
+    var hasChanges = this.runConditionsForItems(values, properties);
+    if (this.filteredChoicesValue.length === this.activeChoices.length) {
+      this.filteredChoicesValue = null;
+    }
+    if (hasChanges) {
+      if (!!this.filteredChoicesValue) {
+        this.clearIncorrectValues();
+      }
+      this.onVisibleChoicesChanged();
+    }
+    return hasChanges;
+  }
+  private setConditionalChoicesRunner() {
+    if (this.choicesVisibleIf) {
+      if (!this.conditionChoicesVisibleIfRunner) {
+        this.conditionChoicesVisibleIfRunner = new ConditionRunner(
+          this.choicesVisibleIf
+        );
+      }
+      this.conditionChoicesVisibleIfRunner.expression = this.choicesVisibleIf;
+    } else {
+      this.conditionChoicesVisibleIfRunner = null;
+    }
+  }
+  private runConditionsForItems(
+    values: HashTable<any>,
+    properties: HashTable<any>
+  ): boolean {
+    this.filteredChoicesValue = [];
+    return ItemValue.runConditionsForItems(
+      this.activeChoices,
+      this.filteredChoices,
+      this.conditionChoicesVisibleIfRunner,
+      values,
+      properties
+    );
+  }
+  private getConditionRunnerByItem(item: ItemValue): ConditionRunner {
+    var runner = item.getConditionRunner();
+    return runner ? runner : this.conditionChoicesVisibleIfRunner;
   }
   protected getHasOther(val: any): boolean {
     return val == this.otherItem.value;
@@ -94,7 +170,13 @@ export class QuestionSelectBase extends Question {
     }
   }
   protected setNewValue(newValue: any) {
-    this.cachedValueForUrlRequests = newValue;
+    if (
+      (!this.choicesByUrl.isRunning &&
+        !this.choicesByUrl.isWaitingForParameters) ||
+      !this.isValueEmpty(newValue)
+    ) {
+      this.cachedValueForUrlRequests = newValue;
+    }
     super.setNewValue(newValue);
   }
   protected valueFromData(val: any): any {
@@ -121,7 +203,7 @@ export class QuestionSelectBase extends Question {
   protected hasUnknownValue(val: any, includeOther: boolean = false): boolean {
     if (!val) return false;
     if (includeOther && val == this.otherItem.value) return false;
-    return ItemValue.getItemByValue(this.activeChoices, val) == null;
+    return ItemValue.getItemByValue(this.filteredChoices, val) == null;
   }
   /**
    * The list of items. Every item has value and text. If text is empty, the value is rendered. The item text supports markdown.
@@ -132,7 +214,6 @@ export class QuestionSelectBase extends Question {
   }
   public set choices(newValue: Array<any>) {
     this.setPropertyValue("choices", newValue);
-    this.onVisibleChoicesChanged();
   }
   /**
    * By default the entered text in the others input in the checkbox/radiogroup/dropdown are stored as "question name " + "-Comment". The value itself is "question name": "others". Set this property to false, to store the entered text directly in the "question name" key.
@@ -197,34 +278,40 @@ export class QuestionSelectBase extends Question {
    * @see choicesOrder
    */
   public get visibleChoices(): Array<ItemValue> {
-    if (!this.hasOther && this.choicesOrder == "none")
-      return this.activeChoices;
+    if (this.canUseFilteredChoices()) return this.filteredChoices;
     if (!this.visibleChoicesCache) {
       this.visibleChoicesCache = this.sortVisibleChoices(
-        this.activeChoices.slice()
+        this.filteredChoices.slice()
       );
-      if (this.hasOther) {
-        this.visibleChoicesCache.push(this.otherItem);
-      }
+      this.addToVisibleChoices(this.visibleChoicesCache);
     }
     return this.visibleChoicesCache;
+  }
+  protected canUseFilteredChoices(): boolean {
+    return !this.hasOther && this.choicesOrder == "none";
+  }
+  protected addToVisibleChoices(items: Array<ItemValue>) {
+    if (this.hasOther) {
+      items.push(this.otherItem);
+    }
   }
   /**
    * Returns the text for the current value. If the value is null then returns empty string. If 'other' is selected then returns the text for other value.
    */
-  public get displayValue(): any {
-    if (this.customWidget) {
-      var res = this.customWidget.getDisplayValue(this);
-      if (res) return res;
-    }
+  protected getDisplayValueCore(keysAsText: boolean): any {
     if (this.isEmpty()) return "";
-    return this.getDisplayValue(this.visibleChoices, this.value);
+    return this.getChoicesDisplayValue(this.visibleChoices, this.value);
   }
-  protected getDisplayValue(items: ItemValue[], val: any): any {
+  protected getChoicesDisplayValue(items: ItemValue[], val: any): any {
     if (val == this.otherItemValue.value)
       return this.comment ? this.comment : this.locOtherText.textOrHtml;
     var str = ItemValue.getTextOrHtmlByValue(items, val);
     return str == "" && val ? val : str;
+  }
+  private get filteredChoices(): Array<ItemValue> {
+    return this.filteredChoicesValue
+      ? this.filteredChoicesValue
+      : this.activeChoices;
   }
   private get activeChoices(): Array<ItemValue> {
     return this.choicesFromUrl ? this.choicesFromUrl : this.choices;
@@ -238,20 +325,17 @@ export class QuestionSelectBase extends Question {
   protected onCheckForErrors(errors: Array<SurveyError>) {
     super.onCheckForErrors(errors);
     if (!this.hasOther || !this.isOtherSelected || this.comment) return;
-    errors.push(new CustomError(this.otherErrorText));
+    errors.push(new CustomError(this.otherErrorText, this));
   }
   public setSurveyImpl(value: ISurveyImpl) {
     super.setSurveyImpl(value);
     this.runChoicesByUrl();
   }
-  public onLocaleChanged() {
-    super.onLocaleChanged();
-    this.onVisibleChoicesChanged();
-  }
   protected getStoreOthersAsComment() {
     return (
-      this.storeOthersAsComment &&
-      (this.survey != null ? this.survey.storeOthersAsComment : true)
+      (this.storeOthersAsComment &&
+        (this.survey != null ? this.survey.storeOthersAsComment : true)) ||
+      (!this.choicesByUrl.isEmpty && !this.choicesFromUrl)
     );
   }
   onSurveyLoad() {
@@ -261,7 +345,9 @@ export class QuestionSelectBase extends Question {
   }
   onAnyValueChanged(name: string) {
     super.onAnyValueChanged(name);
-    this.runChoicesByUrl();
+    if (name != this.getValueName()) {
+      this.runChoicesByUrl();
+    }
   }
   private runChoicesByUrl() {
     if (!this.choicesByUrl || this.isLoadingFromJson) return;
@@ -341,7 +427,7 @@ export class QuestionSelectBase extends Question {
       val.isExists && this.hasUnknownValue(val.value) ? null : val.value;
     return { value: value };
   }
-  private onVisibleChoicesChanged() {
+  protected onVisibleChoicesChanged() {
     if (this.isLoadingFromJson) return;
     this.visibleChoicesCache = null;
     this.fireCallback(this.choicesChangedCallback);
@@ -426,6 +512,7 @@ JsonObject.metaData.addClass(
         obj.choicesByUrl.setData(value);
       }
     },
+    "choicesVisibleIf:condition",
     { name: "otherText", serializationProperty: "locOtherText" },
     { name: "otherErrorText", serializationProperty: "locOtherErrorText" },
     { name: "storeOthersAsComment:boolean", default: true }

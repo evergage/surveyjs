@@ -15,15 +15,13 @@ import { AnswerRequiredError } from "./error";
 import { ILocalizableOwner, LocalizableString } from "./localizablestring";
 import { Helpers } from "./helpers";
 
-export interface IMultipleTextData {
+export interface IMultipleTextData extends ILocalizableOwner {
   getSurvey(): ISurvey;
   getTextProcessor(): ITextProcessor;
   getAllValues(): any;
   getMultipleTextValue(name: string): any;
   setMultipleTextValue(name: string, value: any);
   getIsRequiredText(): string;
-  getLocale(): string;
-  getMarkdownHtml(text: string): string;
 }
 
 export class MultipleTextItemModel extends Base
@@ -37,6 +35,9 @@ export class MultipleTextItemModel extends Base
   constructor(name: any = null, title: string = null) {
     super();
     this.editorValue = this.createEditor(name);
+    this.editor.questionTitleTemplateCallback = function() {
+      return "";
+    };
     this.editor.titleLocation = "left";
     if (title) {
       this.title = title;
@@ -181,6 +182,12 @@ export class MultipleTextItemModel extends Base
     if (this.data) return this.data.getAllValues();
     return this.value;
   }
+  getFilteredValues(): any {
+    return this.getAllValues();
+  }
+  getFilteredProperties(): any {
+    return { survey: this.getSurvey() };
+  }
   //IValidatorOwner
   getValidatorTitle(): string {
     return this.title;
@@ -190,6 +197,12 @@ export class MultipleTextItemModel extends Base
   }
   set validatedValue(val: any) {
     this.value = val;
+  }
+  getDataFilteredValues(): any {
+    return this.getFilteredValues();
+  }
+  getDataFilteredProperties(): any {
+    return this.getFilteredProperties();
   }
 }
 
@@ -227,9 +240,22 @@ export class QuestionMultipleTextModel extends Question
   public get isAllowTitleLeft(): boolean {
     return false;
   }
-  endLoadingFromJson() {
-    super.endLoadingFromJson();
+  onSurveyLoad() {
+    super.onSurveyLoad();
+    this.callEditorFunction("onSurveyLoad");
     this.fireCallback(this.colCountChangedCallback);
+  }
+  onReadOnlyChanged() {
+    super.onReadOnlyChanged();
+    this.callEditorFunction("onReadOnlyChanged");
+  }
+  private callEditorFunction(funcName: string) {
+    for (var i = 0; i < this.items.length; i++) {
+      var item = this.items[i];
+      if (item.editor && item.editor[funcName]) {
+        item.editor[funcName]();
+      }
+    }
   }
   /**
    * The list of input items.
@@ -269,10 +295,10 @@ export class QuestionMultipleTextModel extends Question
     json["type"] = "text";
     return json;
   }
-  public onLocaleChanged() {
-    super.onLocaleChanged();
+  public locStrsChanged() {
+    super.locStrsChanged();
     for (var i = 0; i < this.items.length; i++) {
-      this.items[i].onLocaleChanged();
+      this.items[i].locStrsChanged();
     }
   }
   supportGoNextPageAutomatic() {

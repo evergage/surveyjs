@@ -1,14 +1,14 @@
 import * as React from "react";
 import { QuestionBase } from "../questionbase";
 import { Question } from "../question";
-import { SurveyElement } from "../base";
+import { SurveyElement, SurveyError } from "../base";
 import { SurveyQuestionCommentItem } from "./reactquestioncomment";
 import { SurveyElementBase, ReactSurveyElement } from "./reactquestionelement";
 import { SurveyCustomWidget } from "./custom-widget";
 
 export interface ISurveyCreator {
   createQuestionElement(question: QuestionBase): JSX.Element;
-  renderError(key: string, errorText: string, cssClasses: any): JSX.Element;
+  renderError(key: string, error: SurveyError, cssClasses: any): JSX.Element;
   questionTitleLocation(): string;
   questionErrorLocation(): string;
 }
@@ -252,14 +252,110 @@ export class SurveyElementErrors extends ReactSurveyElement {
     if (!this.element || this.element.errors.length == 0) return null;
     var errors = [];
     for (var i = 0; i < this.element.errors.length; i++) {
-      var errorText = this.element.errors[i].getText();
       var key = "error" + i;
-      errors.push(this.creator.renderError(key, errorText, this.cssClasses));
+      errors.push(
+        this.creator.renderError(key, this.element.errors[i], this.cssClasses)
+      );
     }
     return (
       <div role="alert" className={this.cssClasses.error.root}>
         {errors}
       </div>
+    );
+  }
+}
+
+export class SurveyQuestionAndErrorsCell extends ReactSurveyElement {
+  protected question: Question;
+  protected creator: ISurveyCreator;
+  constructor(props: any) {
+    super(props);
+    this.setProperties(props);
+    this.state = this.getState();
+  }
+  componentWillReceiveProps(nextProps: any) {
+    super.componentWillReceiveProps(nextProps);
+    this.setProperties(nextProps);
+  }
+  protected setProperties(nextProps: any) {
+    this.question = nextProps.question;
+    this.creator = nextProps.creator;
+  }
+  private getState(increaseError: boolean = false): any {
+    if (!this.question) return;
+    var q = this.question;
+    var error = !!this.state && !!this.state.error ? this.state.error : 0;
+    if (increaseError) error++;
+    return { isReadOnly: q.isReadOnly, visible: q.visible, error: error };
+  }
+  componentDidMount() {
+    this.doAfterRender();
+    if (this.question) {
+      var self = this;
+      this.question.registerFunctionOnPropertyValueChanged(
+        "isReadOnly",
+        function() {
+          self.setState(self.getState());
+        },
+        "react"
+      );
+      this.question.registerFunctionOnPropertyValueChanged(
+        "visible",
+        function() {
+          self.setState(self.getState());
+        },
+        "react"
+      );
+      this.question.errorsChangedCallback = () => {
+        self.setState(self.getState(true));
+      };
+    }
+  }
+  componentWillUnmount() {
+    if (this.question) {
+      this.question.errorsChangedCallback = null;
+      this.question.unRegisterFunctionOnPropertiesValueChanged(
+        ["visible", "isReadOnly"],
+        "react"
+      );
+      var el: any = this.refs["cell"];
+      if (!!el) {
+        el.removeAttribute("data-rendered");
+      }
+    }
+  }
+  componentDidUpdate(prevProps, prevState) {
+    this.doAfterRender();
+  }
+  protected doAfterRender() {}
+  protected getCellClass(): any {
+    return null;
+  }
+  render(): JSX.Element {
+    if (!this.question) return null;
+    var errors = (
+      <SurveyElementErrors
+        element={this.question}
+        cssClasses={this.cssClasses}
+        creator={this.creator}
+      />
+    );
+    var renderedCell = this.renderCell();
+    return (
+      <td ref="cell" className={this.getCellClass()}>
+        {errors}
+        {renderedCell}
+      </td>
+    );
+  }
+  renderCell(): JSX.Element {
+    if (!this.question.visible) return null;
+    var customWidget = this.question.customWidget;
+    if (!customWidget) {
+      return this.creator.createQuestionElement(this.question);
+    }
+    return (
+      <SurveyCustomWidget creator={this.creator} question={this.question} />
     );
   }
 }

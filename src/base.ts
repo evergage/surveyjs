@@ -9,6 +9,8 @@ export interface ISurveyData {
   getComment(name: string): string;
   setComment(name: string, newValue: string);
   getAllValues(): any;
+  getFilteredValues(): any;
+  getFilteredProperties(): any;
 }
 export interface ITextProcessor {
   processText(text: string, returnDisplayValue: boolean): string;
@@ -35,6 +37,7 @@ export interface ISurvey extends ITextProcessor {
   validatePanel(panel: IPanel): SurveyError;
   hasVisibleQuestionByValueName(valueName: string): boolean;
   processHtml(html: string): string;
+  getSurveyMarkdownHtml(element: Base, text: string): string;
   isDisplayMode: boolean;
   isDesignMode: boolean;
   isLoadingFromJson: boolean;
@@ -61,7 +64,16 @@ export interface ISurvey extends ITextProcessor {
     content: string,
     callback: (status: string, data: any) => any
   );
-  updateChoicesFromServer(question: IQuestion, choices: Array<ItemValue>, serverResult: any): Array<ItemValue>
+  clearFiles(
+    name: string,
+    value: any,
+    clearCallback: (status: string, data: any) => any
+  );
+  updateChoicesFromServer(
+    question: IQuestion,
+    choices: Array<ItemValue>,
+    serverResult: any
+  ): Array<ItemValue>;
   updateQuestionCssClasses(question: IQuestion, cssClasses: any);
   updatePanelCssClasses(panel: IPanel, cssClasses: any);
   afterRenderQuestion(question: IQuestion, htmlElement);
@@ -75,6 +87,7 @@ export interface ISurvey extends ITextProcessor {
   matrixCellValidate(question: IQuestion, options: any): SurveyError;
   dynamicPanelAdded(question: IQuestion);
   dynamicPanelRemoved(question: IQuestion, panelIndex: number);
+  dynamicPanelItemValueChanged(question: IQuestion, options: any);
 }
 export interface ISurveyImpl {
   geSurveyData(): ISurveyData;
@@ -91,6 +104,7 @@ export interface ISurveyElement {
   onSurveyLoad();
   getType(): string;
   setVisibleIndex(value: number): number;
+  locStrsChanged();
 }
 export interface IElement extends IConditionRunner, ISurveyElement {
   visible: boolean;
@@ -101,7 +115,6 @@ export interface IElement extends IConditionRunner, ISurveyElement {
   startWithNewLine: boolean;
   isPanel: boolean;
   removeElement(el: IElement): boolean;
-  onLocaleChanged();
   onReadOnlyChanged();
   onAnyValueChanged(name: string);
   updateCustomWidgets();
@@ -114,11 +127,12 @@ export interface IQuestion extends IElement {
   onSurveyValueChanged(newValue: any);
   supportGoNextPageAutomatic(): boolean;
   clearUnusedValues();
-  displayValue: any;
+  getDisplayValue(keysAsText: boolean): any;
   getValueName(): string;
   clearValue();
   clearValueIfInvisible();
   isAnswerCorrect(): boolean;
+  updateValueWithDefaults();
   value: any;
 }
 export interface IParentElement {
@@ -168,7 +182,7 @@ export class Base {
     CustomPropertiesCollection.createProperties(this);
   }
   /**
-   * Returns the type of the object as a string as it represents in the json.
+   * Returns the type of the object as a string as it represents in the json. It should be in lowcase.
    */
   public getType(): string {
     return "base";
@@ -192,17 +206,17 @@ export class Base {
   endLoadingFromJson() {
     this.isLoadingFromJsonValue = false;
   }
-  public onLocaleChanged() {
+  public locStrsChanged() {
     for (let key in this.arraysInfo) {
       let item = this.arraysInfo[key];
       if (item && item.isItemValues) {
         var arr = this.getPropertyValue(key);
-        if (arr) ItemValue.NotifyArrayOnLocaleChanged(arr);
+        if (arr) ItemValue.locStrsChanged(arr);
       }
     }
     for (let key in this.localizableStrings) {
       let item = this.getLocalizableString(key);
-      if (item) item.onChanged();
+      if (item) item.strChanged();
     }
   }
   /**
@@ -252,7 +266,7 @@ export class Base {
     });
     for (var i = 0; i < this.onPropChangeFunctions.length; i++) {
       if (this.onPropChangeFunctions[i].name == name)
-        this.onPropChangeFunctions[i].func();
+        this.onPropChangeFunctions[i].func(newValue);
     }
   }
   /**
@@ -440,8 +454,21 @@ export class Base {
   }
 }
 export class SurveyError {
+  private locTextValue: LocalizableString;
+  constructor(public text: string = null, locOwner: ILocalizableOwner = null) {
+    this.locTextValue = new LocalizableString(locOwner, true);
+    this.locText.text = this.getText();
+  }
+  public get locText() {
+    return this.locTextValue;
+  }
   public getText(): string {
-    throw new Error("This method is abstract");
+    var res = this.text;
+    if (!res) res = this.getDefaultText();
+    return res;
+  }
+  protected getDefaultText(): string {
+    return "";
   }
 }
 

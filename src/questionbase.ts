@@ -34,14 +34,6 @@ export class QuestionBase extends SurveyElement
   private isCustomWidgetRequested: boolean = false;
   private customWidgetValue: QuestionCustomWidget;
   customWidgetData = { isNeedRender: true };
-  /**
-   * The event is fired when the survey change it's locale
-   * @see SurveyModel.locale
-   */
-  public localeChanged: Event<(sender: QuestionBase) => any, any> = new Event<
-    (sender: QuestionBase) => any,
-    any
-  >();
   focusCallback: () => void;
   surveyLoadCallback: () => void;
 
@@ -58,7 +50,22 @@ export class QuestionBase extends SurveyElement
   }
   public setSurveyImpl(value: ISurveyImpl) {
     super.setSurveyImpl(value);
-    if (this.survey && this.survey.isDesignMode) this.onVisibleChanged();
+    if (this.survey && this.survey.isDesignMode) {
+      this.onVisibleChanged();
+    }
+    if (this.data && !this.isLoadingFromJson) {
+      this.runCondition(
+        this.getDataFilteredValues(),
+        this.getDataFilteredProperties()
+      );
+      this.locStrsChanged();
+    }
+  }
+  public getDataFilteredValues(): any {
+    return !!this.data ? this.data.getFilteredValues() : null;
+  }
+  public getDataFilteredProperties(): any {
+    return !!this.data ? this.data.getFilteredProperties() : null;
   }
   /**
    * A parent element. It can be panel or page.
@@ -167,6 +174,9 @@ export class QuestionBase extends SurveyElement
    */
   public get hasTitle(): boolean {
     return false;
+  }
+  public getTitleLocation(): string {
+    return "";
   }
   /**
    * Returns false if the question doesn't have a description property, for example: QuestionHtmlModel, or description property is empty.
@@ -351,8 +361,12 @@ export class QuestionBase extends SurveyElement
    */
   public clearIncorrectValues() {}
   public clearUnusedValues() {}
-  public get displayValue(): any {
+  public updateValueWithDefaults() {}
+  public getDisplayValue(keysAsText: boolean): any {
     return "";
+  }
+  public get displayValue(): any {
+    return this.getDisplayValue(true);
   }
   public get value(): any {
     return null;
@@ -360,9 +374,8 @@ export class QuestionBase extends SurveyElement
   public set value(newValue: any) {}
   public clearValue() {}
   public clearValueIfInvisible() {}
-  public onLocaleChanged() {
-    super.onLocaleChanged();
-    this.localeChanged.fire(this, this.getLocale());
+  public locStrsChanged() {
+    super.locStrsChanged();
   }
   onReadOnlyChanged() {}
   onAnyValueChanged(name: string) {}
@@ -375,12 +388,21 @@ export class QuestionBase extends SurveyElement
   public getLocale(): string {
     return this.survey
       ? (<ILocalizableOwner>(<any>this.survey)).getLocale()
-      : this.locOwner ? this.locOwner.getLocale() : "";
+      : this.locOwner
+        ? this.locOwner.getLocale()
+        : "";
   }
-  public getMarkdownHtml(text: string) {
+  public getMarkdownHtml(text: string): string {
     return this.survey
-      ? (<ILocalizableOwner>(<any>this.survey)).getMarkdownHtml(text)
-      : this.locOwner ? this.locOwner.getMarkdownHtml(text) : null;
+      ? this.survey.getSurveyMarkdownHtml(this, text)
+      : this.locOwner
+        ? this.locOwner.getMarkdownHtml(text)
+        : null;
+  }
+  public getProcessedText(text: string): string {
+    if (this.textProcessor) return this.textProcessor.processText(text, true);
+    if (this.locOwner) return this.locOwner.getProcessedText(text);
+    return text;
   }
 }
 JsonObject.metaData.addClass("questionbase", [

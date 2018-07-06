@@ -208,6 +208,10 @@ $base-line-height: 2em;
       }
     }
   }
+
+  .sv_q_imgsel.checked label > div {
+    background-color: $main-color;
+  }
 }
 
 .sv_main {
@@ -383,7 +387,6 @@ $base-line-height: 2em;
           }
 
           .sv_q_other input,
-          .sv_q_text_root,
           .sv_q_dropdown_control,
           input[type="text"],
           select {
@@ -448,8 +451,21 @@ $base-line-height: 2em;
           }
 
           .sv_q_radiogroup.sv_q_radiogroup_inline:not(:last-child),
-          .sv_q_checkbox.sv_q_checkbox_inline:not(:last-child) {
+          .sv_q_checkbox.sv_q_checkbox_inline:not(:last-child),
+          .sv_q_imgsel.sv_q_imagepicker_inline:not(:last-child) {
             margin-right: 1.5em;
+          }
+
+          .sv_q_imgsel label > div {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            padding: 4px;
+            border: 1px solid lightgray;
+            border-radius: 4px;
+            > img {
+              display: block;
+            }
           }
 
           // .sv_q_radiogroup,
@@ -466,8 +482,13 @@ $base-line-height: 2em;
           //   }
           // }
 
+          .sv_q_radiogroup_clear {
+            margin-top: 0.5em;
+          }
+
           .sv_q_checkbox_inline,
-          .sv_q_radiogroup_inline {
+          .sv_q_radiogroup_inline,
+          .sv_q_imagepicker_inline {
             line-height: $base-line-height;
             display: inline-block;
           }
@@ -486,10 +507,6 @@ $base-line-height: 2em;
           &.sv_q_matrix_dynamic {
             .sv_matrix_dynamic_button {
               padding: 0.3em 2em;
-            }
-            .sv_q_checkbox_label,
-            .sv_q_radiogroup_label {
-              margin-right: 1.5em;
             }
             tr {
               //border-bottom: 1px solid $header-background-color;
@@ -519,14 +536,13 @@ $base-line-height: 2em;
 
           td {
             padding: 0.5em;
-            padding-right: $base-line-height;
           }
 
           th {
             line-height: 1.3em;
             padding: 0.5em;
             vertical-align: bottom;
-            font-weight: normal;
+            font-weight: bold;
           }
         }
 

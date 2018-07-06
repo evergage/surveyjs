@@ -17,6 +17,13 @@ export {
 } from "../../validator";
 export { ItemValue } from "../../itemvalue";
 export { Base, Event, SurveyError, ISurvey, SurveyElement } from "../../base";
+export {
+  CustomError,
+  AnswerRequiredError,
+  OneAnswerRequiredError,
+  RequreNumericError,
+  ExceedSizeError
+} from "../../error";
 export { ILocalizableOwner, LocalizableString } from "../../localizablestring";
 export { ChoicesRestfull } from "../../choicesRestfull";
 export { FunctionFactory } from "../../functionsfactory";
@@ -28,7 +35,6 @@ export {
 } from "../../conditions";
 export { ConditionsParser } from "../../conditionsParser";
 export { ProcessValue } from "../../conditionProcessValue";
-export { CustomError, ExceedSizeError, RequreNumericError } from "../../error";
 export {
   JsonError,
   JsonIncorrectTypeError,
@@ -85,6 +91,7 @@ export { QuestionRatingModel } from "../../question_rating";
 export { QuestionExpressionModel } from "../../question_expression";
 export { QuestionTextModel } from "../../question_text";
 export { QuestionBooleanModel } from "../../question_boolean";
+export { QuestionImagePickerModel } from "../../question_imagepicker";
 export {
   QuestionPanelDynamicModel,
   QuestionPanelDynamicItem

@@ -13,6 +13,10 @@ import { ConditionRunner } from "./conditions";
  * Extends question base class with title, value, errors and other functionality
  */
 export class Question extends QuestionBase implements IValidatorOwner {
+  private static TextPreprocessorValuesMap = {
+    title: "processedTitle",
+    require: "requiredText"
+  };
   private questionValue: any;
   private questionComment: string;
   private textPreProcessor: TextPreProcessor;
@@ -20,8 +24,8 @@ export class Question extends QuestionBase implements IValidatorOwner {
   private validatorsValue: Array<SurveyValidator>;
   valueChangedCallback: () => void;
   commentChangedCallback: () => void;
-  titleChangedCallback: () => void;
   validateValueCallback: () => SurveyError;
+  questionTitleTemplateCallback: () => string;
 
   constructor(public name: string) {
     super(name);
@@ -40,9 +44,6 @@ export class Question extends QuestionBase implements IValidatorOwner {
       this,
       true
     );
-    locDescriptionValue.onGetTextCallback = function(html) {
-      return self.getProcessedHtml(html);
-    };
     this.createLocalizableString("commentText", this, true);
     this.createLocalizableString("requiredErrorText", this);
   }
@@ -138,7 +139,6 @@ export class Question extends QuestionBase implements IValidatorOwner {
   }
   public set title(val: string) {
     this.setLocalizableStringText("title", val);
-    this.fireCallback(this.titleChangedCallback);
   }
   get locTitle(): LocalizableString {
     return this.getLocalizableString("title");
@@ -197,7 +197,9 @@ export class Question extends QuestionBase implements IValidatorOwner {
    * Returns the rendred question title.
    */
   public get processedTitle() {
-    return this.getProcessedHtml(this.locTitleHtml);
+    var res = this.locTitle.textOrHtml;
+    return res ? res : this.name;
+    //return this.getProcessedHtml(this.locTitleHtml);
   }
   /**
    * Returns the title after processing the question template.
@@ -208,8 +210,13 @@ export class Question extends QuestionBase implements IValidatorOwner {
     if (!this.survey) return res;
     return this.survey.getUpdatedQuestionTitle(this, res);
   }
+  protected getQuestionTitleTemplate() {
+    if (this.questionTitleTemplateCallback)
+      return this.questionTitleTemplateCallback();
+    return !!this.survey ? this.survey.getQuestionTitleTemplate() : null;
+  }
   private calcFullTitle(): string {
-    if (this.survey && this.survey.getQuestionTitleTemplate()) {
+    if (this.getQuestionTitleTemplate()) {
       if (!this.textPreProcessor) {
         var self = this;
         this.textPreProcessor = new TextPreProcessor();
@@ -219,9 +226,7 @@ export class Question extends QuestionBase implements IValidatorOwner {
           self.getProcessedTextValue(textValue);
         };
       }
-      return this.textPreProcessor.process(
-        this.survey.getQuestionTitleTemplate()
-      );
+      return this.textPreProcessor.process(this.getQuestionTitleTemplate());
     }
     var requireText = this.requiredText;
     if (requireText) requireText += " ";
@@ -257,10 +262,12 @@ export class Question extends QuestionBase implements IValidatorOwner {
   }
   protected getProcessedTextValue(textValue: TextPreProcessorValue) {
     var name = textValue.name.toLocaleLowerCase();
-    textValue.isExists = name == "no" || name == "title" || name == "require";
-    if (name == "no") textValue.value = this.no;
-    if (name == "title") textValue.value = this.processedTitle;
-    if (name == "require") textValue.value = this.requiredText;
+    textValue.isExists =
+      Object.keys(Question.TextPreprocessorValuesMap).indexOf(name) !== -1 ||
+      this[textValue.name] !== undefined;
+    textValue.value = this[
+      Question.TextPreprocessorValuesMap[name] || textValue.name
+    ];
   }
   public supportComment(): boolean {
     return false;
@@ -277,7 +284,7 @@ export class Question extends QuestionBase implements IValidatorOwner {
   public set isRequired(val: boolean) {
     if (this.isRequired == val) return;
     this.setPropertyValue("isRequired", val);
-    this.fireCallback(this.titleChangedCallback);
+    this.locTitle.strChanged();
   }
   public get hasComment(): boolean {
     return this.getPropertyValue("hasComment", false);
@@ -340,17 +347,10 @@ export class Question extends QuestionBase implements IValidatorOwner {
     this.conditionEnabelRunner.expression = this.enableIf;
     this.readOnly = !this.conditionEnabelRunner.run(values, properties);
   }
-
+  public readOnlyChangedCallback: () => void;
   onReadOnlyChanged() {
     this.setPropertyValue("isReadOnly", this.isReadOnly);
-  }
-  onAnyValueChanged(name: string) {
-    if (!name) return;
-    var titleValue = this.locTitle.text;
-    if (!titleValue) return;
-    if (titleValue.toLocaleLowerCase().indexOf("{" + name.toLowerCase()) > -1) {
-      this.fireCallback(this.titleChangedCallback);
-    }
+    this.fireCallback(this.readOnlyChangedCallback);
   }
   protected get no(): string {
     if (this.visibleIndex < 0) return "";
@@ -367,16 +367,12 @@ export class Question extends QuestionBase implements IValidatorOwner {
   }
   public onSurveyLoad() {
     super.onSurveyLoad();
-    if (this.defaultValue) {
-      this.updateValueWithDefaults();
-    }
+    this.updateValueWithDefaults();
   }
   protected onSetData() {
     super.onSetData();
     this.onSurveyValueChanged(this.value);
-    if (this.defaultValue) {
-      this.updateValueWithDefaults();
-    }
+    this.updateValueWithDefaults();
   }
   private isvalueChangedCallbackFiring: boolean = false;
   /**
@@ -416,11 +412,14 @@ export class Question extends QuestionBase implements IValidatorOwner {
       this.clearValue();
     }
   }
-  public get displayValue(): any {
+  public getDisplayValue(keysAsText: boolean): any {
     if (this.customWidget) {
       var res = this.customWidget.getDisplayValue(this);
       if (res) return res;
     }
+    return this.getDisplayValueCore(keysAsText);
+  }
+  protected getDisplayValueCore(keyAsText: boolean): any {
     return this.value;
   }
   /**
@@ -449,14 +448,17 @@ export class Question extends QuestionBase implements IValidatorOwner {
       return false;
     return this.isTwoValueEquals(this.value, this.correctAnswer);
   }
-  protected updateValueWithDefaults() {
+  public updateValueWithDefaults() {
     if (
       this.isLoadingFromJson ||
-      (!this.isDesignMode && this.isValueEmpty(this.defaultValue))
+      (!this.isDesignMode && this.isDefaultValueEmpty())
     )
       return;
     if (!this.isDesignMode && !this.isEmpty()) return;
     this.setDefaultValue();
+  }
+  protected isDefaultValueEmpty(): boolean {
+    return this.isValueEmpty(this.defaultValue);
   }
   protected setDefaultValue() {
     this.value = this.defaultValue;
@@ -469,6 +471,7 @@ export class Question extends QuestionBase implements IValidatorOwner {
     return this.getComment();
   }
   public set comment(newValue: string) {
+    if (!!newValue) newValue = newValue.trim();
     if (this.comment == newValue) return;
     this.setComment(newValue);
     this.fireCallback(this.commentChangedCallback);
@@ -550,7 +553,7 @@ export class Question extends QuestionBase implements IValidatorOwner {
   }
   private collectErrors() {
     this.onCheckForErrors(this.errors);
-    if (this.errors.length == 0 && !this.isEmpty()) {
+    if (this.errors.length == 0) {
       var error = this.runValidators();
       if (error) {
         //validators may change the question value.
@@ -631,6 +634,9 @@ export class Question extends QuestionBase implements IValidatorOwner {
   }
   set validatedValue(val: any) {
     this.value = val;
+  }
+  getAllValues(): any {
+    return !!this.data ? this.data.getAllValues() : null;
   }
 }
 JsonObject.metaData.addClass(

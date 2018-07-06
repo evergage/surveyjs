@@ -730,6 +730,42 @@ QUnit.test("ExpressionOperand: brackets 2", function(assert) {
   values.c = 5;
   assert.equal(runner.run(values), true, "(1 + 3 + 4) / 3 >= 3");
 });
+
+QUnit.test("ExpressionOperand: not operator", function(assert) {
+  var parser = new ConditionsParser();
+  var node = new ConditionNode();
+  parser.parse("({a} + {b}) * 2 >= 10", node);
+  assert.equal(node.isNot, false, "there is no not");
+  parser.parse("not(({a} + {b}) * 2 >= 10)", node);
+  assert.equal(node.isNot, true, "not is 'not'");
+  parser.parse("!(({a} + {b}) * 2 >= 10)", node);
+  assert.equal(node.isNot, true, "not is '!'");
+});
+QUnit.test("ExpressionOperand: not operator 2", function(assert) {
+  var parser = new ConditionsParser();
+  var node = new ConditionNode();
+  parser.parse("({a} + {b} >= 10) and !({a} - {b} < 0)", node);
+  assert.equal(node.children.length, 2, "there two children");
+  assert.equal(node.isNot, false, "there is no not in the root");
+  assert.equal(
+    node.children[0].isNot,
+    false,
+    "there is no not in first children"
+  );
+  assert.equal(node.children[1].isNot, true, "there is not in second children");
+});
+
+QUnit.test("ConditionRunner, not operator simple", function(assert) {
+  var parser = new ConditionsParser();
+  var node = new ConditionNode();
+  var runner = new ConditionRunner("not({a} + {b} > 20)");
+
+  var values = { a: 10, b: 20 };
+  assert.equal(runner.run(values), false, "10 + 20 > 20");
+  values.b = 5;
+  assert.equal(runner.run(values), true, "10 + 5 > 20");
+});
+
 QUnit.test("ExpressionRunner: (1+2)*3", function(assert) {
   var runner = new ExpressionRunner("(1+2)*3");
   assert.equal(runner.run({}), 9, "(1+2)*3 is 9");
@@ -833,4 +869,48 @@ QUnit.test("ConditionsParser, parse array successfully", function(assert) {
   var parser = new ConditionsParser();
   assert.ok(parser.createCondition("{a} = ['item1', 'item2']"));
   assert.notOk(parser.error, "There is no errors");
+});
+
+QUnit.test("Variable may have '-' and '+' in their names", function(assert) {
+  var runner = new ConditionRunner("{2-3+4} = 1");
+  var values = { "2-3+4": 1 };
+  assert.equal(runner.run(values), true, "1 = 1");
+  values = { "2-3+4": 2 };
+  assert.equal(runner.run(values), false, "2 != 1");
+});
+
+QUnit.test("Variable equals 0x1 works incorrectly, Bug#1180", function(assert) {
+  var runner = new ConditionRunner("{val} notempty");
+  var values = { val: "0x1" };
+  assert.equal(runner.run(values), true, "0x1 is not empty");
+
+  runner = new ConditionRunner("{val} = 2");
+  values = { val: "0x1" };
+  assert.equal(runner.run(values), false, "0x1 is not 2");
+  values = { val: "0x2" };
+  assert.equal(runner.run(values), true, "0x2 is not 2");
+});
+
+QUnit.test("Get variables in expression", function(assert) {
+  var parser = new ConditionsParser();
+  var node = parser.createCondition(
+    "{val1} - {val2} + myFunc({val3}, {val4.prop}) < {val5} and {val6}=1"
+  );
+  var vars = node.getVariables();
+  assert.equal(vars.length, 6, "There are 6 variables in expression");
+  assert.equal(vars[0], "val1", "the first variable");
+  assert.equal(vars[5], "val6", "the last variable");
+});
+
+QUnit.test("contain and noncontain for null arrays", function(assert) {
+  var runner = new ConditionRunner("{val} contain 1");
+  var values = {};
+  assert.equal(
+    runner.run(values),
+    false,
+    "underfined doesn't contain 1 - false"
+  );
+  runner = new ConditionRunner("{val} notcontain 1");
+  values = {};
+  assert.equal(runner.run(values), true, "underfined doesn't contain 1 - true");
 });
