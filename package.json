@@ -31,7 +31,7 @@
     "watch_vue_dev": "webpack --env.buildType dev --env.platform vue --watch"
   },
   "version": "1.0.95",
-  "name": "survey-library",
+  "name": "survey-library-mcis-custom",
   "private": true,
   "devDependencies": {
     "@types/angular": "1.6.2",
