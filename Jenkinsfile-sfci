@@ -1,0 +1,89 @@
+@Library('sfci-pipeline-sharedlib@master') _
+
+env.RELEASE_BRANCHES = ['master']
+env.NPM_PROXY_REGISTRY = 'nexus-proxy-prd.soma.salesforce.com/nexus/content/repositories/npmjs-internal/'
+env.NPM_REGISTRY = 'nexus.soma.salesforce.com/nexus/content/repositories/npmjs-internal/'
+env.GUS_TEAM_NAME = 'Hypergage'
+
+def releaseParameters = {
+    parameters([
+        booleanParam( defaultValue: false,
+                      description: 'Do you want to publish NPM packages?',
+                      name: 'PUBLISH_NPM')
+        
+    ])
+}
+
+def envDef = [
+    buildImage: '331455399823.dkr.ecr.us-east-2.amazonaws.com/sfci/sfci/centos-sfci-nodejs:5f48ebb',
+    releaseParameters: releaseParameters
+]
+
+executePipeline(envDef) {
+    stage('Init') {
+        echo "Initialize NPM pipeline"
+	checkout scm
+        buildInit()
+        npmInit([nexusCredsId: 'sfci-nexus'])
+        echo "Init done..."
+        
+        echo "Initializing done..."
+    }
+
+    stage("Install Webpack") {
+    	echo "installing webpack"
+    	//sh "npm install --save-dev webpack"
+    	echo "done installing webpack"
+    }
+
+    stage('Build') {
+        echo "Running Build"
+
+        //npmBuild()
+        sh "npm install --ignore-engines"
+        sh "npm run build_prod"
+
+        echo "Build done..."
+    }
+
+    stage('Test') {
+    	echo "Running Test"
+
+        //npmTest()
+
+        echo "Test done..."
+
+    }
+
+    if (params.PUBLISH_NPM) {
+	    stage('Init Publish') {
+	    	echo "Initialize NPM publish"
+
+	        withCredentials([usernamePassword(credentialsId: 'sfci-nexus', usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
+	            // Get the auth token and configure npm (securely)
+	            String authToken = sh([script: "echo -n ${NEXUS_USERNAME}:${NEXUS_PASSWORD} | base64", returnStdout: true]).trim()
+	            wrap([$class: 'MaskPasswordsBuildWrapper', varPasswordPairs: [[password: authToken, var: 'SECRET']]]) {
+	                sh label: 'npm config set proxyRegistry', returnStdout: true, script: "npm config set //${env.NPM_PROXY_REGISTRY}:_authToken ${authToken}"
+	            }
+	        }
+
+	        echo "Initializing done..."
+	    }
+
+	    stage('NPM Publish') {
+	        echo "Publish node package"
+
+	        // sh "npm publish --registry https://${env.NPM_PROXY_REGISTRY}"
+	        
+	        echo "Publish done..."
+	    } 
+	}
+
+    stage('Analysis') {
+        echo "Running lint analysis"
+            
+        //npmStaticAnalysis()
+
+        echo "Analysis done..."
+    }
+}
