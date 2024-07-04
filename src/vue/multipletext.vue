@@ -1,45 +1,34 @@
 <template>
-  <table :class="question.cssClasses.root">
-    <tr
-      v-for="(row, rowindex) in question.getRows()"
-      :key="question.inputId + 'rowkey' + rowindex"
-      :class="question.cssClasses.row"
-    >
-      <template v-for="item in row">
-        <td :key="'label' + item.editor.id" :class="question.cssClasses.itemTitle">
-          <survey-string :locString="item.locTitle"/>
-        </td>
-        <td :key="item.editor.id">
-          <survey-errors v-if="hasErrorsOnTop" :question="item.editor" :location="'top'"/>
-          <component :is="getWidgetComponentName(item.editor)" :question="item.editor"/>
-          <survey-errors v-if="hasErrorsOnBottom" :question="item.editor" :location="'bottom'"/>
-        </td>
+  <table :class="question.getQuestionRootCss()">
+    <tbody>
+      <template
+        v-for="(row, rowIndex) in question.getRows()"
+      >
+        <tr :class="question.cssClasses.row" v-if="row.isVisible" :key="question.inputId + 'rowkey' + rowIndex">
+          <td
+            v-for="cell in row.cells"
+            :key="'item' + cell.item.editor.id"
+            :class="cell.className"
+          >
+            <survey-multipletext-item
+              :question="question"
+              :cell="cell"
+            ></survey-multipletext-item>
+          </td>
+        </tr>
       </template>
-    </tr>
+    </tbody>
   </table>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
-import { Component, Prop } from "vue-property-decorator";
+import { Component } from "vue-property-decorator";
 import { default as QuestionVue } from "./question";
-import { Question } from "../question";
-import { QuestionMultipleTextModel } from "../question_multipletext";
+import { QuestionMultipleTextModel } from "survey-core";
 
 @Component
 export class MultipleText extends QuestionVue<QuestionMultipleTextModel> {
-  getWidgetComponentName(question: Question) {
-    if (question.customWidget) {
-      return "survey-customwidget";
-    }
-    return "survey-text";
-  }
-  get hasErrorsOnTop() {
-    return this.question.survey.questionErrorLocation === "top";
-  }
-  get hasErrorsOnBottom() {
-    return this.question.survey.questionErrorLocation === "bottom";
-  }
 }
 Vue.component("survey-multipletext", MultipleText);
 export default MultipleText;

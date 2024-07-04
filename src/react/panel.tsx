@@ -1,96 +1,106 @@
 import * as React from "react";
 import { SurveyElementErrors } from "./reactquestion";
-import { SurveyElementBase } from "./reactquestionelement";
+import { SurveyElementBase } from "./reactquestion_element";
 import { ReactElementFactory } from "./element-factory";
 
 import { SurveyPanelBase } from "./panel-base";
-import { PanelModel } from "../panel";
+import { PanelModel, doKey2ClickUp, SurveyModel } from "survey-core";
+import { ReactSurveyElementsWrapper } from "./reactsurveymodel";
+import { SurveyActionBar } from "./components/action-bar/action-bar";
+import { TitleElement } from "./components/title/title-element";
+import { SurveyElementHeader } from "./element-header";
 
 export class SurveyPanel extends SurveyPanelBase {
+  private hasBeenExpanded: boolean = false;
   constructor(props: any) {
     super(props);
-    this.panelBase = props.element;
-  }
-  componentWillReceiveProps(nextProps: any) {
-    this.unMakeBaseElementReact(this.panelBase);
-    super.componentWillReceiveProps(nextProps);
-    this.panelBase = nextProps.element;
-    this.makeBaseElementReact(this.panelBase);
   }
   public get panel(): PanelModel {
     return this.panelBase as PanelModel;
   }
-  render(): JSX.Element {
-    if (this.panelBase == null || this.survey == null || this.creator == null)
-      return null;
-    if (!this.panelBase.isVisible) return null;
-    var title = this.renderTitle();
-    var description = this.renderDescription();
-    var errors = (
+  protected renderElement(): JSX.Element {
+    const header = this.renderHeader();
+    const errors = (
       <SurveyElementErrors
         element={this.panelBase}
         cssClasses={this.panelBase.cssClasses}
         creator={this.creator}
       />
     );
-
-    var rows = this.renderRows();
-    var style = {
+    const style = {
       paddingLeft: this.panel.innerPaddingLeft,
-      display: !this.panel.isCollapsed ? "block" : "none"
+      display: this.panel.renderedIsExpanded ? undefined : "none",
     };
-    var rootStyle: { [index: string]: any } = {};
-    if (this.panel.renderWidth) rootStyle["width"] = this.panel.renderWidth;
-    var bottom = this.renderBottom();
+    let content: JSX.Element | null = null;
+    if (this.panel.renderedIsExpanded) {
+      // this.hasBeenExpanded = true;
+      const rows: JSX.Element[] = this.renderRows(this.panelBase.cssClasses);
+      const className: string = this.panelBase.cssClasses.panel.content;
+      content = this.renderContent(style, rows, className);
+    }
+    const focusIn = () => {
+      if(this.panelBase) (this.panelBase as PanelModel).focusIn();
+    };
     return (
-      <div ref="root" className={this.css.panel.container} style={rootStyle}>
-        {title}
-        {description}
-        {errors}
-        {this.renderContent(style, rows)}
+      <div
+        ref={this.rootRef}
+        className={(this.panelBase as PanelModel).getContainerCss()}
+        onFocus={focusIn}
+        id={this.panelBase.id}
+
+      >
+        {this.panel.showErrorsAbovePanel ? errors : null}
+        {header}
+        {this.panel.showErrorsAbovePanel ? null : errors}
+        {content}
+      </div>
+    );
+  }
+  protected renderHeader() {
+    if (!this.panel.hasTitle && !this.panel.hasDescription) {
+      return null;
+    }
+    return <SurveyElementHeader element={this.panel}></SurveyElementHeader>;
+  }
+  protected wrapElement(element: JSX.Element): JSX.Element {
+    const survey: SurveyModel = this.panel.survey as SurveyModel;
+    let wrapper: JSX.Element | null = null;
+    if (survey) {
+      wrapper = ReactSurveyElementsWrapper.wrapElement(survey, element, this.panel);
+    }
+    return wrapper ?? element;
+  }
+  protected renderContent(style: any, rows: JSX.Element[], className: string): JSX.Element {
+    const bottom: JSX.Element | null = this.renderBottom();
+    return (
+      <div style={style} className={className} id={this.panel.contentId}>
+        {rows}
         {bottom}
       </div>
     );
   }
-  protected renderContent(style: any, rows: JSX.Element[]): JSX.Element {
-    return <div style={style}>{rows}</div>;
-  }
-  protected renderTitle(): JSX.Element {
+  protected renderTitle(): JSX.Element | null {
     if (!this.panelBase.title) return null;
-    var text = SurveyElementBase.renderLocString(this.panelBase.locTitle);
-    var expandCollapse = null;
-    var titleStyle = this.css.panel.title;
-    if (this.panel.isCollapsed || this.panel.isExpanded) {
-      titleStyle += " sv_p_title_expandable";
-      var iconCss = "sv_panel_icon";
-      if (!this.panel.isCollapsed) iconCss += " sv_expanded";
-      var changeExpanded = () => {
-        if (this.panel.isCollapsed) {
-          this.panel.expand();
-        } else {
-          this.panel.collapse();
-        }
-      };
-      expandCollapse = <span className={iconCss} />;
-    }
-
-    return (
-      <h4 className={titleStyle} onClick={changeExpanded}>
-        {text}
-        {expandCollapse}
-      </h4>
-    );
+    return <TitleElement element={this.panelBase}></TitleElement>;
   }
-  protected renderDescription(): JSX.Element {
+  protected renderDescription(): JSX.Element | null {
     if (!this.panelBase.description) return null;
     var text = SurveyElementBase.renderLocString(this.panelBase.locDescription);
-    return <div className={this.css.panel.description}>{text}</div>;
+    return (
+      <div className={this.panel.cssClasses.panel.description}>{text}</div>
+    );
   }
-  protected renderBottom(): JSX.Element {
-    return null;
+  protected renderBottom(): JSX.Element | null {
+    const footerToolbar = this.panel.getFooterToolbar();
+    if (!footerToolbar.hasActions) return null;
+    return <SurveyActionBar model={footerToolbar}></SurveyActionBar>;
   }
+  protected getIsVisible(): boolean {
+    return this.panelBase.getIsContentVisible();
+  }
+
 }
 
-ReactElementFactory.Instance.registerElement("panel", props => {
+ReactElementFactory.Instance.registerElement("panel", (props) => {
   return React.createElement(SurveyPanel, props);
 });

@@ -1,12 +1,239 @@
+import { surveyLocalization } from "./surveyStrings";
+import { Base, ComputedUpdater } from "./base";
 import { Helpers, HashTable } from "./helpers";
+import { ILoadFromJSONOptions, ISaveToJSONOptions } from "./base-interfaces";
+
+export interface IPropertyDecoratorOptions<T = any> {
+  defaultValue?: T;
+  defaultSource?: string;
+  getDefaultValue?: (objectInstance?: any) => T;
+  localizable?:
+  | { name?: string, onGetTextCallback?: (str: string) => string, defaultStr?: string }
+  | boolean;
+  onSet?: (val: T, objectInstance: any) => void;
+}
+
+function ensureLocString(
+  target: any,
+  options: IPropertyDecoratorOptions,
+  key: string
+) {
+  let locString = target.getLocalizableString(key);
+  if (!locString) {
+    let defaultStr: string;
+    if(typeof options.localizable === "object" && options.localizable.defaultStr) {
+      defaultStr = options.localizable.defaultStr;
+    }
+    locString = target.createLocalizableString(key, target, true, defaultStr);
+    if (
+      typeof options.localizable === "object" &&
+      typeof options.localizable.onGetTextCallback === "function"
+    ) {
+      locString.onGetTextCallback = options.localizable.onGetTextCallback;
+    }
+  }
+}
+function getLocStringValue(
+  target: any,
+  options: IPropertyDecoratorOptions,
+  key: string
+) {
+  ensureLocString(target, options, key);
+  let res = target.getLocalizableStringText(key);
+  if (!!res) return res;
+  if (typeof options.localizable === "object" && options.localizable.defaultStr) {
+    const loc = !!target.getLocale ? target.getLocale() : "";
+    return surveyLocalization.getString(options.localizable.defaultStr, loc);
+  }
+  return "";
+}
+
+export function property(options: IPropertyDecoratorOptions = {}) {
+  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+  return function (target: any, key: string): void {
+    let processComputedUpdater = (obj: any, val: any) => {
+      if (!!val && typeof val === "object" && val.type === ComputedUpdater.ComputedUpdaterType) {
+        Base.startCollectDependencies(() => obj[key] = val.updater(), obj, key);
+        const result = val.updater();
+        const dependencies = Base.finishCollectDependencies();
+        val.setDependencies(dependencies);
+        if(obj.dependencies[key]) {
+          obj.dependencies[key].dispose();
+        }
+        obj.dependencies[key] = val;
+        return result;
+      }
+      return val;
+    };
+    if (!options || !options.localizable) {
+      Object.defineProperty(target, key, {
+        get: function () {
+          // const serializationProperty = Serializer.getProperty(target.getType(), key);
+          // if(!!serializationProperty && options.defaultValue !== undefined) {
+          //   ConsoleWarnings.error("remove defaultValue from @property for class " + target.getType() + " property name is " + key);
+          // }
+          let defaultVal = null;
+          if (!!options) {
+            if (typeof options.getDefaultValue === "function") {
+              defaultVal = options.getDefaultValue(this);
+            }
+            if (options.defaultValue !== undefined) {
+              defaultVal = options.defaultValue;
+            }
+          }
+          return this.getPropertyValue(key, defaultVal);
+        },
+        set: function (val: any) {
+          const newValue = processComputedUpdater(this, val);
+          this.setPropertyValue(key, newValue);
+          if (!!options && options.onSet) {
+            options.onSet(newValue, this);
+          }
+        },
+      });
+    } else {
+      Object.defineProperty(target, key, {
+        get: function () {
+          return getLocStringValue(this, options, key);
+        },
+        set: function (val: any) {
+          ensureLocString(this, options, key);
+          const newValue = processComputedUpdater(this, val);
+          this.setLocalizableStringText(key, newValue);
+          if (!!options && options.onSet) {
+            options.onSet(newValue, this);
+          }
+        },
+      });
+      Object.defineProperty(
+        target,
+        typeof options.localizable === "object" && !!options.localizable.name ?
+          options.localizable.name : "loc" + key.charAt(0).toUpperCase() + key.slice(1),
+        {
+          get: function () {
+            ensureLocString(this, options, key);
+            return this.getLocalizableString(key);
+          },
+        }
+      );
+    }
+  };
+}
+
+export interface IArrayPropertyDecoratorOptions {
+  onPush?: any;
+  onRemove?: any;
+  onSet?: (val: any, target: any) => void;
+}
+
+function ensureArray(
+  target: any,
+  options: IArrayPropertyDecoratorOptions,
+  key: string
+) {
+  target.ensureArray(
+    key,
+    (item: any, index: number) => {
+      const handler = !!options ? options.onPush : null;
+      handler && handler(item, index, target);
+    },
+    (item: any, index: number) => {
+      const handler = !!options ? options.onRemove : null;
+      handler && handler(item, index, target);
+    },
+  );
+}
+
+export function propertyArray(options?: IArrayPropertyDecoratorOptions) {
+  return function (target: any, key: string) {
+    Object.defineProperty(target, key, {
+      get: function () {
+        ensureArray(this, options, key);
+        return this.getPropertyValue(key);
+      },
+      set: function (val: any) {
+        ensureArray(this, options, key);
+        const arr = this.getPropertyValue(key);
+        if (val === arr) {
+          return;
+        }
+        if (arr) {
+          arr.splice(0, arr.length, ...(val || []));
+        } else {
+          this.setPropertyValue(key, val);
+        }
+        if (!!options && options.onSet) {
+          options.onSet(val, this);
+        }
+      },
+    });
+  };
+}
 
 export interface IObject {
   [key: string]: any;
 }
 
-export class JsonObjectProperty implements IObject {
-  public static getItemValuesDefaultValue: (val: any) => any;
+export interface IJsonPropertyInfo {
+  name: string;
+  type?: string;
+  className?: string;
+  classNamePart?: string;
+  baseClassName?: string;
+  isRequired?: boolean;
+  isUnique?: boolean;
+  //uniquePropertyName
+  uniqueProperty?: string;
+  choices?: any;
+  visible?: boolean;
+  alternativeName?: string;
+  oldName?: string;
+  version?: string;
+  dataList?: Array<string>;
+  isLocalizable?: boolean;
+  isSerializable?: boolean;
+  isLightSerializable?: boolean;
+  readOnly?: boolean;
+  serializationProperty?: string;
+  dependsOn?: Array<string> | string;
+
+  isBindable?: boolean;
+  isArray?: boolean;
+  layout?: string;
+  default?: any;
+  defaultFunc?: (obj: Base) => any;
+  baseValue?: any;
+  onSerializeValue?: (obj: any) => any;
+  onGetValue?: (obj: any) => any;
+  onSettingValue?: (obj: any, value: any) => any;
+  onSetValue?: (obj: any, value: any, jsonConv: JsonObject) => any;
+  visibleIf?: (obj: any) => boolean;
+  enableIf?: (obj: any) => boolean;
+  onExecuteExpression?: (obj: any, res: any) => any;
+  onPropertyEditorUpdate?: (obj: any, propEditor: any) => any;
+
+  displayName?: string;
+  category?: string;
+  categoryIndex?: number;
+  visibleIndex?: number;
+  nextToProperty?: string;
+  overridingProperty?: string;
+  showMode?: string;
+  maxLength?: number;
+  maxValue?: any;
+  minValue?: any;
+}
+/**
+ * Contains information about a property of a survey element (page, panel, questions, and etc).
+ * @see addProperty
+ * @see removeProperty
+ * @see [Add Properties](https://surveyjs.io/Documentation/Survey-Creator#addproperties)
+ * @see [Remove Properties](https://surveyjs.io/Documentation/Survey-Creator#removeproperties)
+ */
+export class JsonObjectProperty implements IObject, IJsonPropertyInfo {
+  public static getItemValuesDefaultValue: (val: any, type: string) => any;
   [key: string]: any;
+  private static Index = 1;
   private static mergableValues = [
     "typeValue",
     "choicesValue",
@@ -15,55 +242,119 @@ export class JsonObjectProperty implements IObject {
     "visibleValue",
     "isSerializable",
     "isLightSerializable",
+    "isCustom",
+    "isBindable",
+    "isUnique",
+    "uniquePropertyName",
     "isDynamicChoices",
     "isLocalizableValue",
     "className",
     "alternativeName",
+    "oldName",
     "layout",
+    "version",
     "classNamePart",
     "baseClassName",
     "defaultValue",
+    "defaultValueFunc",
     "serializationProperty",
     "onGetValue",
     "onSetValue",
+    "onSettingValue",
+    "displayName",
+    "category",
+    "categoryIndex",
+    "visibleIndex",
+    "nextToProperty",
+    "overridingProperty",
+    "showMode",
     "dependedProperties",
-    "visibleIf"
+    "visibleIf",
+    "enableIf",
+    "onExecuteExpression",
+    "onPropertyEditorUpdate",
+    "maxLength",
+    "maxValue",
+    "minValue",
+    "dataListValue",
   ];
-  private typeValue: string = null;
-  private choicesValue: Array<any> = null;
-  private baseValue: any = null;
+  private idValue: number;
+  private classInfoValue: JsonMetadataClass;
+  private typeValue: string;
+  private choicesValue: Array<any>;
+  public baseValue: any;
   private isRequiredValue: boolean = false;
-  private readOnlyValue: boolean | null = null;
-  private visibleValue: boolean | null = null;
-  private isLocalizableValue: boolean | null = null;
-  private choicesfunc: (obj: any, choicesCallback: any) => Array<any> = null;
-  private dependedProperties: Array<string> = null;
+  private isUniqueValue: boolean = false;
+  private uniquePropertyValue: string
+  private readOnlyValue: boolean | null;
+  private visibleValue: boolean | null;
+  private isLocalizableValue: boolean | null;
+  private choicesfunc: (obj: any, choicesCallback: any) => Array<any>;
+  private dependedProperties: Array<string>;
   public isSerializable: boolean = true;
   public isLightSerializable: boolean = true;
-  public isDynamicChoices: boolean = false;
-  public className: string = null;
-  public alternativeName: string = null;
-  public classNamePart: string = null;
-  public baseClassName: string = null;
-  public defaultValueValue: any = null;
-  public serializationProperty: string = null;
-  public layout: string = null;
-  public onGetValue: (obj: any) => any = null;
-  public onSetValue: (obj: any, value: any, jsonConv: JsonObject) => any = null;
-  public visibleIf: (obj: any) => boolean = null;
+  public isCustom: boolean = false;
+  public isDynamicChoices: boolean = false; //TODO obsolete, use dependsOn attribute
+  public isBindable: boolean = false;
+  public className: string;
+  public alternativeName: string;
+  public oldName: string;
+  public classNamePart: string;
+  public baseClassName: string;
+  public defaultValueValue: any;
+  public defaultValueFunc: (obj: Base) => any;
+  public serializationProperty: string;
+  public displayName: string;
+  public category: string = "";
+  public categoryIndex: number = -1;
+  public visibleIndex: number = -1;
+  public nextToProperty: string;
+  public overridingProperty: string;
+  public showMode: string;
+  public maxLength: number = -1;
+  public maxValue: any;
+  public minValue: any;
+  private dataListValue: Array<string>;
+  public layout: string;
+  public version: string;
+  public onSerializeValue: (obj: any) => any;
+  public onGetValue: (obj: any) => any;
+  public onSettingValue: (obj: any, value: any) => any;
+  public onSetValue: (obj: any, value: any, jsonConv: JsonObject) => any;
+  public visibleIf: (obj: any) => boolean;
+  public enableIf: (obj: any) => boolean;
+  public onExecuteExpression: (obj: any, res: any) => any;
+  public onPropertyEditorUpdate: (obj: any, propEditor: any) => any;
 
-  constructor(public name: string, isRequired: boolean = false) {
+  constructor(
+    classInfo: JsonMetadataClass,
+    public name: string,
+    isRequired: boolean = false
+  ) {
+    this.classInfoValue = classInfo;
     this.isRequiredValue = isRequired;
+    this.idValue = JsonObjectProperty.Index++;
+  }
+  uniqueProperty?: string;
+  dependsOn?: string | string[];
+  default?: any;
+  defaultFunc?: (obj: Base) => any;
+  public get id(): number {
+    return this.idValue;
+  }
+  public get classInfo(): JsonMetadataClass {
+    return this.classInfoValue;
   }
   public get type(): string {
     return this.typeValue ? this.typeValue : "string";
   }
   public set type(value: string) {
     if (value === "itemvalues") value = "itemvalue[]";
+    if (value === "textitems") value = "textitem[]";
     this.typeValue = value;
     if (this.typeValue.indexOf("[]") === this.typeValue.length - 2) {
       this.isArray = true;
-      this.className = this.typeValue.substr(0, this.typeValue.length - 2);
+      this.className = this.typeValue.substring(0, this.typeValue.length - 2);
     }
   }
   public isArray = false;
@@ -71,60 +362,95 @@ export class JsonObjectProperty implements IObject {
     return this.isRequiredValue;
   }
   public set isRequired(val: boolean) {
-    this.isRequiredValue = val;
+    if(val !== this.isRequired) {
+      this.isRequiredValue = val;
+      if(!!this.classInfo) {
+        this.classInfo.resetAllProperties();
+      }
+    }
+  }
+  public get isUnique(): boolean {
+    return this.isUniqueValue;
+  }
+  public set isUnique(val: boolean) {
+    this.isUniqueValue = val;
+  }
+  public get uniquePropertyName(): string {
+    return this.uniquePropertyValue;
+  }
+  public set uniquePropertyName(val: string) {
+    this.uniquePropertyValue = val;
   }
   public get hasToUseGetValue() {
     return this.onGetValue || this.serializationProperty;
   }
-  public get defaultValue() {
-    var result: any = this.defaultValueValue;
+  public getDefaultValue(obj: Base): any {
+    let result: any = !!this.defaultValueFunc ? this.defaultValueFunc(obj) : this.defaultValueValue;
     if (
       !!JsonObjectProperty.getItemValuesDefaultValue &&
-      JsonObject.metaData.isDescendantOf(this.className, "itemvalue")
+      Serializer.isDescendantOf(this.className, "itemvalue")
     ) {
-      result = JsonObjectProperty.getItemValuesDefaultValue(
-        this.defaultValueValue || []
-      );
+      result = JsonObjectProperty.getItemValuesDefaultValue(this.defaultValueValue || [], this.className);
     }
     return result;
   }
-  public set defaultValue(newValue) {
+  public get defaultValue(): any {
+    return this.getDefaultValue(undefined);
+  }
+  public set defaultValue(newValue: any) {
     this.defaultValueValue = newValue;
   }
   public isDefaultValue(value: any): boolean {
-    if (!Helpers.isValueEmpty(this.defaultValue))
-      return this.defaultValue == value;
+    return this.isDefaultValueByObj(undefined, value);
+  }
+  public isDefaultValueByObj(obj: Base, value: any): boolean {
+    const dValue = this.getDefaultValue(obj);
+    if (!Helpers.isValueEmpty(dValue)) {
+      return Helpers.isTwoValueEquals(value, dValue, false, true, false);
+    }
+    if(this.isLocalizable) return value === null || value === undefined;
     return (
-      (value === false && this.type == "boolean") ||
-      value === "" ||
-      Helpers.isValueEmpty(value)
+      (value === false && (this.type == "boolean" || this.type == "switch")) ||
+      value === "" || Helpers.isValueEmpty(value)
     );
+  }
+  public getSerializableValue(obj: any): any {
+    if(!!this.onSerializeValue) return this.onSerializeValue(obj);
+    return this.getValue(obj);
   }
   public getValue(obj: any): any {
     if (this.onGetValue) return this.onGetValue(obj);
-    if (this.serializationProperty)
+    if (this.serializationProperty && !!obj[this.serializationProperty])
       return obj[this.serializationProperty].getJson();
     return obj[this.name];
   }
   public getPropertyValue(obj: any): any {
-    if (this.isLocalizable) return obj[this.serializationProperty].text;
+    if (this.isLocalizable) {
+      return !!obj[this.serializationProperty]
+        ? obj[this.serializationProperty].text
+        : null;
+    }
     return this.getValue(obj);
   }
   public get hasToUseSetValue() {
     return this.onSetValue || this.serializationProperty;
   }
-  public setValue(obj: any, value: any, jsonConv: JsonObject) {
+  public settingValue(obj: any, value: any): any {
+    if (!this.onSettingValue || obj.isLoadingFromJson) return value;
+    return this.onSettingValue(obj, value);
+  }
+  public setValue(obj: any, value: any, jsonConv: JsonObject): void {
     if (this.onSetValue) {
       this.onSetValue(obj, value, jsonConv);
     } else {
-      if (this.serializationProperty)
+      if (this.serializationProperty && !!obj[this.serializationProperty])
         obj[this.serializationProperty].setJson(value);
       else {
         if (value && typeof value === "string") {
           if (this.type == "number") {
             value = parseInt(value);
           }
-          if (this.type == "boolean") {
+          if (this.type == "boolean" || this.type == "switch") {
             value = value.toLowerCase() === "true";
           }
         }
@@ -132,15 +458,14 @@ export class JsonObjectProperty implements IObject {
       }
     }
   }
+  public validateValue(value: any): boolean {
+    const choices = this.choices;
+    if(!Array.isArray(choices) || choices.length === 0) return true;
+    return choices.indexOf(value) > -1;
+  }
   public getObjType(objType: string) {
     if (!this.classNamePart) return objType;
     return objType.replace(this.classNamePart, "");
-  }
-  public getClassName(className: string): string {
-    if (className) className = className.toLowerCase();
-    return this.classNamePart && className.indexOf(this.classNamePart) < 0
-      ? className + this.classNamePart
-      : className;
   }
   /**
    * Depricated, please use getChoices
@@ -156,7 +481,10 @@ export class JsonObjectProperty implements IObject {
     if (this.choicesfunc != null) return this.choicesfunc(obj, choicesCallback);
     return null;
   }
-  public setChoices(value: Array<any>, valueFunc: () => Array<any>) {
+  public setChoices(
+    value: Array<any>,
+    valueFunc: (obj: any) => Array<any> = null
+  ) {
     this.choicesValue = value;
     this.choicesfunc = valueFunc;
   }
@@ -174,11 +502,27 @@ export class JsonObjectProperty implements IObject {
   public set readOnly(val: boolean) {
     this.readOnlyValue = val;
   }
+  public isEnable(obj: any): boolean {
+    if(this.readOnly) return false;
+    if(!obj || !this.enableIf) return true;
+    return this.enableIf(this.getOriginalObj(obj));
+  }
   public isVisible(layout: string, obj: any = null): boolean {
     let isLayout = !this.layout || this.layout == layout;
     if (!this.visible || !isLayout) return false;
-    if (!!this.visibleIf && !!obj) return this.visibleIf(obj);
+    if (!!this.visibleIf && !!obj) {
+      return this.visibleIf(this.getOriginalObj(obj));
+    }
     return true;
+  }
+  private getOriginalObj(obj: any): any {
+    if (obj && obj.getOriginalObj) {
+      const orjObj = obj.getOriginalObj();
+      if(orjObj && Serializer.findProperty(orjObj.getType(), this.name)) {
+        return orjObj;
+      }
+    }
+    return obj;
   }
   public get visible(): boolean {
     return this.visibleValue != null ? this.visibleValue : true;
@@ -186,11 +530,34 @@ export class JsonObjectProperty implements IObject {
   public set visible(val: boolean) {
     this.visibleValue = val;
   }
+  public isAvailableInVersion(ver: string): boolean {
+    if(!!this.alternativeName || this.oldName) return true;
+    return this.isAvailableInVersionCore(ver);
+  }
+  public getSerializedName(ver: string): string {
+    if(!this.alternativeName) return this.name;
+    return this.isAvailableInVersionCore(ver) ? this.name : this.alternativeName || this.oldName;
+  }
+  public getSerializedProperty(obj: any, ver: string): JsonObjectProperty {
+    if(!this.oldName || this.isAvailableInVersionCore(ver)) return this;
+    if(!obj || !obj.getType) return null;
+    return Serializer.findProperty(obj.getType(), this.oldName);
+  }
+  private isAvailableInVersionCore(ver: string): boolean {
+    if(!ver || !this.version) return true;
+    return Helpers.compareVerions(this.version, ver) <= 0;
+  }
   public get isLocalizable(): boolean {
     return this.isLocalizableValue != null ? this.isLocalizableValue : false;
   }
   public set isLocalizable(val: boolean) {
     this.isLocalizableValue = val;
+  }
+  public get dataList(): Array<string> {
+    return Array.isArray(this.dataListValue) ? this.dataListValue : [];
+  }
+  public set dataList(val: Array<string>) {
+    this.dataListValue = val;
   }
   public mergeWith(prop: JsonObjectProperty) {
     var valuesNames = JsonObjectProperty.mergableValues;
@@ -208,6 +575,19 @@ export class JsonObjectProperty implements IObject {
   }
   public getDependedProperties(): Array<string> {
     return !!this.dependedProperties ? this.dependedProperties : [];
+  }
+  public schemaType(): string {
+    if(this.className === "choicesByUrl") return undefined;
+    if(this.className === "string") return this.className;
+    if (!!this.className) return "array";
+    if (!!this.baseClassName) return "array";
+    if (this.type == "switch") return "boolean";
+    if (this.type == "boolean" || this.type == "number") return this.type;
+    return "string";
+  }
+  public schemaRef(): string {
+    if (!!this.className) return this.className;
+    return undefined;
   }
   private mergeValue(prop: JsonObjectProperty, valueName: string) {
     if (this[valueName] == null && prop[valueName] != null) {
@@ -237,6 +617,10 @@ export class CustomPropertiesCollection {
         break;
       }
     }
+  }
+  public static removeAllProperties(className: string): void {
+    className = className.toLowerCase();
+    delete CustomPropertiesCollection.properties[className];
   }
   public static addClass(className: string, parentClassName: string) {
     className = className.toLowerCase();
@@ -280,60 +664,91 @@ export class CustomPropertiesCollection {
     }
   }
   private static createPropertyInObj(obj: any, prop: JsonObjectProperty) {
-    if (obj[prop.name] || obj.hasOwnProperty(prop.name)) return;
+    if (CustomPropertiesCollection.checkIsPropertyExists(obj, prop.name)) return;
+    if (!!prop.serializationProperty && CustomPropertiesCollection.checkIsPropertyExists(obj, prop.serializationProperty)) return;
     if (
       prop.isLocalizable &&
       prop.serializationProperty &&
-      !obj[prop.serializationProperty] &&
       obj.createCustomLocalizableObj
     ) {
-      obj.createCustomLocalizableObj(prop.name);
+      const locStr = obj.createCustomLocalizableObj(prop.name);
+      locStr.defaultValue = prop.defaultValue;
       var locDesc = {
-        get: function() {
+        get: function () {
           return obj.getLocalizableString(prop.name);
-        }
+        },
       };
       Object.defineProperty(obj, prop.serializationProperty, locDesc);
       var desc = {
-        get: function() {
-          return obj.getLocalizableStringText(prop.name, prop.defaultValue);
+        get: function () {
+          return obj.getLocalizableStringText(prop.name);
         },
-        set: function(v: any) {
+        set: function (v: any) {
           obj.setLocalizableStringText(prop.name, v);
-        }
+        },
       };
       Object.defineProperty(obj, prop.name, desc);
     } else {
       var defaultValue = prop.defaultValue;
-      if (
-        JsonObject.metaData.isDescendantOf(prop.className, "itemvalue") &&
-        typeof obj.createNewArray === "function"
-      ) {
-        obj.createNewArray(prop.name, function(item: any) {
-          item.locOwner = obj;
-        });
-        obj.setPropertyValue(prop.name, defaultValue);
-        defaultValue = null;
+      var isArrayProp = prop.isArray || prop.type === "multiplevalues";
+      if (typeof obj.createNewArray === "function") {
+        if (Serializer.isDescendantOf(prop.className, "itemvalue")) {
+          obj.createNewArray(prop.name, function (item: any) {
+            item.locOwner = obj;
+            item.ownerPropertyName = prop.name;
+          });
+          isArrayProp = true;
+        } else {
+          //It is a simple array property
+          if (isArrayProp) {
+            obj.createNewArray(prop.name);
+          }
+        }
+        if (isArrayProp) {
+          if (Array.isArray(defaultValue)) {
+            obj.setPropertyValue(prop.name, defaultValue);
+          }
+          defaultValue = null;
+        }
       }
       if (!!obj.getPropertyValue && !!obj.setPropertyValue) {
         var desc = {
           get: () => {
+            if (!!prop.onGetValue) {
+              return prop.onGetValue(obj);
+            }
             return obj.getPropertyValue(prop.name, defaultValue);
           },
-          set: function(v: any) {
-            obj.setPropertyValue(prop.name, v);
-          }
+          set: function (v: any) {
+            if (!!prop.onSetValue) {
+              prop.onSetValue(obj, v, null);
+            } else {
+              obj.setPropertyValue(prop.name, v);
+            }
+          },
         };
         Object.defineProperty(obj, prop.name, desc);
       }
     }
+    if (prop.type === "condition" || prop.type === "expression") {
+      if (!!prop.onExecuteExpression) {
+        obj.addExpressionProperty(prop.name, prop.onExecuteExpression);
+      }
+    }
+  }
+  private static checkIsPropertyExists(obj: any, name: string): boolean {
+    return obj.hasOwnProperty(name) || obj[name];
   }
 }
 
 export class JsonMetadataClass {
   static requiredSymbol = "!";
   static typeSymbol = ":";
-  properties: Array<JsonObjectProperty> = null;
+  properties: Array<JsonObjectProperty>;
+  private isCustomValue: boolean;
+  private allProperties: Array<JsonObjectProperty>;
+  private requiredProperties: Array<JsonObjectProperty>;
+  private hashProperties: HashTable<JsonObjectProperty>;
   constructor(
     public name: string,
     properties: Array<any>,
@@ -341,25 +756,105 @@ export class JsonMetadataClass {
     public parentName: string = null
   ) {
     name = name.toLowerCase();
+    this.isCustomValue = !creator && name !== "survey";
     if (this.parentName) {
       this.parentName = this.parentName.toLowerCase();
       CustomPropertiesCollection.addClass(name, this.parentName);
+      if (!!creator) {
+        this.makeParentRegularClass();
+      }
     }
     this.properties = new Array<JsonObjectProperty>();
     for (var i = 0; i < properties.length; i++) {
-      var prop = this.createProperty(properties[i]);
-      if (prop) {
-        this.properties.push(prop);
-      }
+      this.createProperty(properties[i], this.isCustom);
     }
   }
+  //Obsolete
   public find(name: string): JsonObjectProperty {
     for (var i = 0; i < this.properties.length; i++) {
       if (this.properties[i].name == name) return this.properties[i];
     }
     return null;
   }
-  public createProperty(propInfo: any): JsonObjectProperty {
+  public findProperty(name: string): JsonObjectProperty {
+    this.fillAllProperties();
+    return this.hashProperties[name];
+  }
+  public getAllProperties(): Array<JsonObjectProperty> {
+    this.fillAllProperties();
+    return this.allProperties;
+  }
+  public getRequiredProperties(): Array<JsonObjectProperty> {
+    if(!!this.requiredProperties) return this.requiredProperties;
+    this.requiredProperties = [];
+    const props = this.getAllProperties();
+    for(let i = 0; i < props.length; i ++) {
+      if(props[i].isRequired) this.requiredProperties.push(props[i]);
+    }
+    return this.requiredProperties;
+  }
+  public resetAllProperties(): void {
+    this.allProperties = undefined;
+    this.requiredProperties = undefined;
+    this.hashProperties = undefined;
+    var childClasses = Serializer.getChildrenClasses(this.name);
+    for (var i = 0; i < childClasses.length; i++) {
+      childClasses[i].resetAllProperties();
+    }
+  }
+  public get isCustom(): boolean { return this.isCustomValue; }
+  private fillAllProperties(): void {
+    if(!!this.allProperties) return;
+    this.allProperties = [];
+    this.hashProperties = {};
+    const localProperties: HashTable<JsonObjectProperty> = {};
+    this.properties.forEach(prop => localProperties[prop.name] = prop);
+    const parentClass = !!this.parentName ? Serializer.findClass(this.parentName) : null;
+    if(!!parentClass) {
+      const parentProperties = parentClass.getAllProperties();
+      parentProperties.forEach(prop => {
+        const overridedProp = localProperties[prop.name];
+        if(!!overridedProp) {
+          overridedProp.mergeWith(prop);
+          this.addPropCore(overridedProp);
+        } else {
+          this.addPropCore(prop);
+        }
+      });
+    }
+    this.properties.forEach(prop => {
+      if(!this.hashProperties[prop.name]) {
+        this.addPropCore(prop);
+      }
+    });
+  }
+  private addPropCore(prop: JsonObjectProperty): void {
+    this.allProperties.push(prop);
+    this.hashProperties[prop.name] = prop;
+    if(!!prop.alternativeName) {
+      this.hashProperties[prop.alternativeName] = prop;
+    }
+  }
+  private isOverridedProp(propName: string): boolean {
+    return !!this.parentName && !!Serializer.findProperty(this.parentName, propName);
+  }
+  private hasRegularChildClass(): void {
+    if (!this.isCustom) return;
+    this.isCustomValue = false;
+    for (var i = 0; i < this.properties.length; i++) {
+      this.properties[i].isCustom = false;
+    }
+    CustomPropertiesCollection.removeAllProperties(this.name);
+    this.makeParentRegularClass();
+  }
+  private makeParentRegularClass(): void {
+    if (!this.parentName) return;
+    const parent = Serializer.findClass(this.parentName);
+    if (!!parent) {
+      parent.hasRegularChildClass();
+    }
+  }
+  public createProperty(propInfo: any, isCustom: boolean = false): JsonObjectProperty {
     var propertyName = typeof propInfo === "string" ? propInfo : propInfo.name;
     if (!propertyName) return;
     var propertyType = null;
@@ -368,9 +863,10 @@ export class JsonMetadataClass {
       propertyType = propertyName.substring(typeIndex + 1);
       propertyName = propertyName.substring(0, typeIndex);
     }
-    var isRequired = this.getIsPropertyNameRequired(propertyName);
+    var isRequired =
+      this.getIsPropertyNameRequired(propertyName) || !!propInfo.isRequired;
     propertyName = this.getPropertyName(propertyName);
-    var prop = new JsonObjectProperty(propertyName, isRequired);
+    var prop = new JsonObjectProperty(this, propertyName, isRequired);
     if (propertyType) {
       prop.type = propertyType;
     }
@@ -378,8 +874,11 @@ export class JsonMetadataClass {
       if (propInfo.type) {
         prop.type = propInfo.type;
       }
-      if (!Helpers.isValueEmpty(propInfo.default)) {
+      if (propInfo.default !== undefined) {
         prop.defaultValue = propInfo.default;
+      }
+      if (propInfo.defaultFunc !== undefined) {
+        prop.defaultValueFunc = propInfo.defaultFunc;
       }
       if (!Helpers.isValueEmpty(propInfo.isSerializable)) {
         prop.isSerializable = propInfo.isSerializable;
@@ -387,14 +886,71 @@ export class JsonMetadataClass {
       if (!Helpers.isValueEmpty(propInfo.isLightSerializable)) {
         prop.isLightSerializable = propInfo.isLightSerializable;
       }
+      if (!Helpers.isValueEmpty(propInfo.maxLength)) {
+        prop.maxLength = propInfo.maxLength;
+      }
+      if (propInfo.displayName !== undefined) {
+        prop.displayName = propInfo.displayName;
+      }
+      if (!Helpers.isValueEmpty(propInfo.category)) {
+        prop.category = propInfo.category;
+      }
+      if (!Helpers.isValueEmpty(propInfo.categoryIndex)) {
+        prop.categoryIndex = propInfo.categoryIndex;
+      }
+      if (!Helpers.isValueEmpty(propInfo.nextToProperty)) {
+        prop.nextToProperty = propInfo.nextToProperty;
+      }
+      if (!Helpers.isValueEmpty(propInfo.overridingProperty)) {
+        prop.overridingProperty = propInfo.overridingProperty;
+      }
+      if (!Helpers.isValueEmpty(propInfo.visibleIndex)) {
+        prop.visibleIndex = propInfo.visibleIndex;
+      }
+      if (!Helpers.isValueEmpty(propInfo.showMode)) {
+        prop.showMode = propInfo.showMode;
+      }
+      if (!Helpers.isValueEmpty(propInfo.maxValue)) {
+        prop.maxValue = propInfo.maxValue;
+      }
+      if (!Helpers.isValueEmpty(propInfo.minValue)) {
+        prop.minValue = propInfo.minValue;
+      }
+      if (!Helpers.isValueEmpty(propInfo.dataList)) {
+        prop.dataList = propInfo.dataList;
+      }
       if (!Helpers.isValueEmpty(propInfo.isDynamicChoices)) {
         prop.isDynamicChoices = propInfo.isDynamicChoices;
       }
-      if (propInfo.visible === false) {
-        prop.visible = false;
+      if (!Helpers.isValueEmpty(propInfo.isBindable)) {
+        prop.isBindable = propInfo.isBindable;
+      }
+      if (!Helpers.isValueEmpty(propInfo.isUnique)) {
+        prop.isUnique = propInfo.isUnique;
+      }
+      if (!Helpers.isValueEmpty(propInfo.uniqueProperty)) {
+        prop.uniquePropertyName = propInfo.uniqueProperty;
+      }
+      if (!Helpers.isValueEmpty(propInfo.isArray)) {
+        prop.isArray = propInfo.isArray;
+      }
+      if (propInfo.visible === true || propInfo.visible === false) {
+        prop.visible = propInfo.visible;
       }
       if (!!propInfo.visibleIf) {
         prop.visibleIf = propInfo.visibleIf;
+      }
+      if (!!propInfo.enableIf) {
+        prop.enableIf = propInfo.enableIf;
+      }
+      if (!!propInfo.onExecuteExpression) {
+        prop.onExecuteExpression = propInfo.onExecuteExpression;
+      }
+      if (!!propInfo.onPropertyEditorUpdate) {
+        prop.onPropertyEditorUpdate = propInfo.onPropertyEditorUpdate;
+      }
+      if (propInfo.readOnly === true) {
+        prop.readOnly = true;
       }
       if (propInfo.choices) {
         var choicesFunc =
@@ -406,14 +962,20 @@ export class JsonMetadataClass {
       if (!!propInfo.baseValue) {
         prop.setBaseValue(propInfo.baseValue);
       }
+      if (propInfo.onSerializeValue) {
+        prop.onSerializeValue = propInfo.onSerializeValue;
+      }
       if (propInfo.onGetValue) {
         prop.onGetValue = propInfo.onGetValue;
       }
       if (propInfo.onSetValue) {
         prop.onSetValue = propInfo.onSetValue;
       }
+      if (propInfo.onSettingValue) {
+        prop.onSettingValue = propInfo.onSettingValue;
+      }
       if (propInfo.isLocalizable) {
-        propInfo.serializationProperty = "loc" + propInfo.name;
+        propInfo.serializationProperty = "loc" + prop.name;
       }
       if (propInfo.serializationProperty) {
         prop.serializationProperty = propInfo.serializationProperty;
@@ -433,6 +995,10 @@ export class JsonMetadataClass {
       }
       if (propInfo.baseClassName) {
         prop.baseClassName = propInfo.baseClassName;
+        prop.isArray = true;
+      }
+      if(prop.isArray === true) {
+        prop.isArray = true;
       }
       if (propInfo.classNamePart) {
         prop.classNamePart = propInfo.classNamePart;
@@ -440,12 +1006,23 @@ export class JsonMetadataClass {
       if (propInfo.alternativeName) {
         prop.alternativeName = propInfo.alternativeName;
       }
+      if(propInfo.oldName) {
+        prop.oldName = propInfo.oldName;
+      }
       if (propInfo.layout) {
         prop.layout = propInfo.layout;
+      }
+      if (propInfo.version) {
+        prop.version = propInfo.version;
       }
       if (propInfo.dependsOn) {
         this.addDependsOnProperties(prop, propInfo.dependsOn);
       }
+    }
+    this.properties.push(prop);
+    if (isCustom && !this.isOverridedProp(prop.name)) {
+      prop.isCustom = true;
+      CustomPropertiesCollection.addProperty(this.name, prop);
     }
     return prop;
   }
@@ -478,14 +1055,63 @@ export class JsonMetadataClass {
     return propertyName;
   }
 }
+
+/**
+ * The metadata object. It contains object properties' runtime information and allows you to modify it.
+ */
 export class JsonMetadata {
   private classes: HashTable<JsonMetadataClass> = {};
   private alternativeNames: HashTable<string> = {};
   private childrenClasses: HashTable<Array<JsonMetadataClass>> = {};
-  private classProperties: HashTable<Array<JsonObjectProperty>> = {};
+  private dynamicPropsCache: HashTable<Array<JsonObjectProperty>> = {};
+  public onSerializingProperty: ((obj: Base, prop: JsonObjectProperty, value: any, json: any) => boolean) | undefined;
+  public getObjPropertyValue(obj: any, name: string): any {
+    if (this.isObjWrapper(obj) && this.isNeedUseObjWrapper(obj, name)) {
+      const orignalObj = obj.getOriginalObj();
+      const prop = Serializer.findProperty(orignalObj.getType(), name);
+      if (!!prop) return this.getObjPropertyValueCore(orignalObj, prop);
+    }
+    const prop = Serializer.findProperty(obj.getType(), name);
+    if (!prop) return obj[name];
+    return this.getObjPropertyValueCore(obj, prop);
+  }
+  public setObjPropertyValue(obj: any, name: string, val: any) {
+    if (obj[name] === val) return;
+    if (!!obj[name] && !!obj[name].setJson) {
+      obj[name].setJson(val);
+    } else {
+      if (Array.isArray(val)) {
+        const newVal = [];
+        for (var i = 0; i < val.length; i++) newVal.push(val[i]);
+        val = newVal;
+      }
+      obj[name] = val;
+    }
+  }
+  private getObjPropertyValueCore(obj: any, prop: JsonObjectProperty): any {
+    if (!prop.isSerializable) return obj[prop.name];
+    if (prop.isLocalizable) {
+      if (prop.isArray) return obj[prop.name];
+      if (!!prop.serializationProperty)
+        return obj[prop.serializationProperty].text;
+    }
+    return obj.getPropertyValue(prop.name);
+  }
+  private isObjWrapper(obj: any): boolean {
+    return !!obj.getOriginalObj && !!obj.getOriginalObj();
+  }
+  private isNeedUseObjWrapper(obj: any, name: string): boolean {
+    if(!obj.getDynamicProperties) return true;
+    const props = obj.getDynamicProperties();
+    if(!Array.isArray(props)) return false;
+    for(let i = 0; i < props.length; i ++) {
+      if(props[i].name === name) return true;
+    }
+    return false;
+  }
   public addClass(
     name: string,
-    properties: Array<any>,
+    properties: Array<IJsonPropertyInfo | string>,
     creator: (json?: any) => any = null,
     parentName: string = null
   ): JsonMetadataClass {
@@ -531,67 +1157,145 @@ export class JsonMetadata {
   public getProperties(className: string): Array<JsonObjectProperty> {
     var metaClass = this.findClass(className);
     if (!metaClass) return [];
-    var properties = this.classProperties[metaClass.name];
-    if (!properties) {
-      properties = new Array<JsonObjectProperty>();
-      this.fillProperties(metaClass.name, properties);
-      this.classProperties[metaClass.name] = properties;
-    }
-    return properties;
-  }
-  private getDynamicProperties(obj: any): Array<JsonObjectProperty> {
-    if (obj.getDynamicProperties && obj.getDynamicType) {
-      var names = obj.getDynamicProperties();
-      return JsonObject.metaData.findProperties(obj.getDynamicType(), names);
-    }
-    return [];
+    return metaClass.getAllProperties();
   }
   public getPropertiesByObj(obj: any): Array<JsonObjectProperty> {
-    if (!obj || !obj.getType) return [];
-    var res = [];
-    var props = this.getProperties(obj.getType());
-    for (var i = 0; i < props.length; i++) {
-      res.push(props[i]);
-    }
-    var dynamicProps = this.getDynamicProperties(obj);
-    if (dynamicProps && dynamicProps.length > 0) {
-      for (var i = 0; i < dynamicProps.length; i++) {
-        res.push(dynamicProps[i]);
+    const type = !!obj && !!obj.getType ? obj.getType() : undefined;
+    if (!type) return [];
+    const props = this.getProperties(type);
+    const dynamicProps = this.getDynamicPropertiesByObj(obj);
+    for(let i = dynamicProps.length -1; i >= 0; i --) {
+      if(this.findProperty(type, dynamicProps[i].name)) {
+        dynamicProps.splice(i, 1);
       }
     }
+    if(dynamicProps.length === 0) return props;
+
+    return [].concat(props).concat(dynamicProps);
+  }
+  public addDynamicPropertiesIntoObj(dest: any, src: any, props: Array<JsonObjectProperty>): void {
+    props.forEach(prop => {
+      this.addDynamicPropertyIntoObj(dest, src, prop.name, false);
+      if (prop.serializationProperty) {
+        this.addDynamicPropertyIntoObj(dest, src, prop.serializationProperty, true);
+      }
+      if (prop.alternativeName) {
+        this.addDynamicPropertyIntoObj(dest, src, prop.alternativeName, false);
+      }
+    });
+  }
+  private addDynamicPropertyIntoObj(dest: any, src: any, propName: string, isReadOnly: boolean): void {
+    var desc = {
+      configurable: true,
+      get: function () {
+        return src[propName];
+      },
+    };
+    if (!isReadOnly) {
+      (<any>desc)["set"] = function (v: any) {
+        src[propName] = v;
+      };
+    }
+    Object.defineProperty(dest, propName, desc);
+  }
+  public getDynamicPropertiesByObj(obj: any, dynamicType: string = null): Array<JsonObjectProperty> {
+    if (!obj || !obj.getType) return [];
+    if(!!obj.getDynamicProperties) return obj.getDynamicProperties();
+    if(!obj.getDynamicType && !dynamicType) return [];
+    const dType = !!dynamicType ? dynamicType : obj.getDynamicType();
+    return this.getDynamicPropertiesByTypes(obj.getType(), dType);
+  }
+  public getDynamicPropertiesByTypes(objType: string, dynamicType: string, invalidNames?: Array<string>): Array<JsonObjectProperty> {
+    if (!dynamicType) return [];
+    const cacheType = dynamicType + "-" + objType;
+    if(this.dynamicPropsCache[cacheType]) return this.dynamicPropsCache[cacheType];
+    var dynamicProps = this.getProperties(dynamicType);
+    if (!dynamicProps || dynamicProps.length == 0) return [];
+    const hash: any = {};
+    const props = this.getProperties(objType);
+    for (var i = 0; i < props.length; i++) {
+      hash[props[i].name] = props[i];
+    }
+    const res = [];
+    if(!invalidNames) invalidNames = [];
+    for (let i = 0; i < dynamicProps.length; i++) {
+      const dProp = dynamicProps[i];
+      if (!hash[dProp.name] && invalidNames.indexOf(dProp.name) < 0) {
+        res.push(dProp);
+      }
+    }
+    this.dynamicPropsCache[cacheType] = res;
     return res;
   }
-
+  public hasOriginalProperty(obj: Base, propName: string): boolean {
+    return !!this.getOriginalProperty(obj, propName);
+  }
+  public getOriginalProperty(obj: Base, propName: string): JsonObjectProperty {
+    var res = this.findProperty(obj.getType(), propName);
+    if (!!res) return res;
+    if (this.isObjWrapper(obj))
+      return this.findProperty((<any>obj).getOriginalObj().getType(), propName);
+    return null;
+  }
+  public getProperty(
+    className: string,
+    propertyName: string
+  ): JsonObjectProperty {
+    const prop = this.findProperty(className, propertyName);
+    if (!prop) return prop;
+    const classInfo = this.findClass(className);
+    if (prop.classInfo === classInfo) return prop;
+    const newProp = new JsonObjectProperty(classInfo, prop.name, prop.isRequired);
+    newProp.mergeWith(prop);
+    newProp.isArray = prop.isArray;
+    classInfo.properties.push(newProp);
+    classInfo.resetAllProperties();
+    return newProp;
+  }
   public findProperty(
     className: string,
     propertyName: string
   ): JsonObjectProperty {
-    className = className.toLowerCase();
-    return this.findPropertyCore(this.getProperties(className), propertyName);
+    const cl = this.findClass(className);
+    return !!cl ? cl.findProperty(propertyName): null;
   }
   public findProperties(
     className: string,
     propertyNames: Array<string>
   ): Array<JsonObjectProperty> {
-    className = className.toLowerCase();
-    var result = [];
-    var properties = this.getProperties(className);
+    var result = new Array<JsonObjectProperty>();
+    const cl = this.findClass(className);
+    if(!cl) return result;
     for (var i = 0; i < propertyNames.length; i++) {
-      var prop = this.findPropertyCore(properties, propertyNames[i]);
+      var prop = cl.findProperty(propertyNames[i]);
       if (prop) {
         result.push(prop);
       }
     }
     return result;
   }
-  private findPropertyCore(
-    properties: Array<JsonObjectProperty>,
+  public getAllPropertiesByName(
     propertyName: string
-  ): JsonObjectProperty {
-    for (var i = 0; i < properties.length; i++) {
-      if (properties[i].name == propertyName) return properties[i];
+  ): Array<JsonObjectProperty> {
+    var res = new Array<JsonObjectProperty>();
+    var classes = this.getAllClasses();
+    for (var i = 0; i < classes.length; i++) {
+      var classInfo = this.findClass(classes[i]);
+      for (var j = 0; j < classInfo.properties.length; j++) {
+        if (classInfo.properties[j].name == propertyName) {
+          res.push(classInfo.properties[j]);
+          break;
+        }
+      }
     }
-    return null;
+    return res;
+  }
+  public getAllClasses(): Array<string> {
+    var res = new Array<string>();
+    for (var name in this.classes) {
+      res.push(name);
+    }
+    return res;
   }
   public createClass(name: string, json: any = undefined): any {
     name = name.toLowerCase();
@@ -619,10 +1323,10 @@ export class JsonMetadata {
     var customTemplateName = res.getTemplate
       ? res.getTemplate()
       : res.getType();
-    res.getType = function() {
+    res.getType = function () {
       return customTypeName;
     };
-    res.getTemplate = function() {
+    res.getTemplate = function () {
       return customTemplateName;
     };
     CustomPropertiesCollection.createProperties(res);
@@ -638,56 +1342,53 @@ export class JsonMetadata {
     return result;
   }
   public getRequiredProperties(name: string): Array<string> {
-    var properties = this.getProperties(name);
+    const metaClass = this.findClass(name);
+    if(!metaClass) return [];
+    const props = metaClass.getRequiredProperties();
     var res = [];
-    for (var i = 0; i < properties.length; i++) {
-      if (properties[i].isRequired) {
-        res.push(properties[i].name);
-      }
+    for (var i = 0; i < props.length; i++) {
+      res.push(props[i].name);
     }
     return res;
   }
-  public addProperties(className: string, propertiesInfos: Array<any>) {
+  public addProperties(className: string, propertiesInfos: Array<IJsonPropertyInfo | string>): void {
     className = className.toLowerCase();
     var metaDataClass = this.findClass(className);
     for (var i = 0; i < propertiesInfos.length; i++) {
       this.addCustomPropertyCore(metaDataClass, propertiesInfos[i]);
     }
   }
-  public addProperty(className: string, propertyInfo: any) {
-    this.addCustomPropertyCore(this.findClass(className), propertyInfo);
+  public addProperty(className: string, propertyInfo: IJsonPropertyInfo | string): JsonObjectProperty {
+    return this.addCustomPropertyCore(this.findClass(className), propertyInfo);
   }
   private addCustomPropertyCore(
     metaDataClass: JsonMetadataClass,
     propertyInfo: any
-  ) {
-    if (!metaDataClass) return;
-    var property = metaDataClass.createProperty(propertyInfo);
+  ): JsonObjectProperty {
+    if (!metaDataClass) return null;
+    var property = metaDataClass.createProperty(propertyInfo, true);
     if (property) {
-      this.addPropertyToClass(metaDataClass, property);
-      this.emptyClassPropertiesHash(metaDataClass);
-      CustomPropertiesCollection.addProperty(metaDataClass.name, property);
+      this.clearDynamicPropsCache(metaDataClass);
+      metaDataClass.resetAllProperties();
     }
+    return property;
   }
   public removeProperty(className: string, propertyName: string) {
     var metaDataClass = this.findClass(className);
     if (!metaDataClass) return false;
     var property = metaDataClass.find(propertyName);
     if (property) {
+      this.clearDynamicPropsCache(metaDataClass);
       this.removePropertyFromClass(metaDataClass, property);
-      this.emptyClassPropertiesHash(metaDataClass);
+      metaDataClass.resetAllProperties();
       CustomPropertiesCollection.removeProperty(
         metaDataClass.name,
         propertyName
       );
     }
   }
-  private addPropertyToClass(
-    metaDataClass: JsonMetadataClass,
-    property: JsonObjectProperty
-  ) {
-    if (metaDataClass.find(property.name) != null) return;
-    metaDataClass.properties.push(property);
+  private clearDynamicPropsCache(metaDataClass: JsonMetadataClass): void {
+    this.dynamicPropsCache = {};
   }
   private removePropertyFromClass(
     metaDataClass: JsonMetadataClass,
@@ -696,13 +1397,6 @@ export class JsonMetadata {
     var index = metaDataClass.properties.indexOf(property);
     if (index < 0) return;
     metaDataClass.properties.splice(index, 1);
-  }
-  private emptyClassPropertiesHash(metaDataClass: JsonMetadataClass) {
-    this.classProperties[metaDataClass.name] = null;
-    var childClasses = this.getChildrenClasses(metaDataClass.name);
-    for (var i = 0; i < childClasses.length; i++) {
-      this.classProperties[childClasses[i].name] = null;
-    }
   }
   private fillChildrenClasses(
     name: string,
@@ -749,63 +1443,157 @@ export class JsonMetadata {
   public addAlterNativeClassName(name: string, alternativeName: string) {
     this.alternativeNames[alternativeName.toLowerCase()] = name.toLowerCase();
   }
-  private fillProperties(name: string, list: Array<JsonObjectProperty>) {
-    var metaDataClass = this.findClass(name);
-    if (!metaDataClass) return;
-    if (metaDataClass.parentName) {
-      this.fillProperties(metaDataClass.parentName, list);
-    }
-    for (var i = 0; i < metaDataClass.properties.length; i++) {
-      this.addPropertyCore(metaDataClass.properties[i], list, list.length);
-    }
+  public generateSchema(className: string = undefined): any {
+    if (!className) className = "survey";
+    var classInfo = this.findClass(className);
+    if (!classInfo) return null;
+    var res = {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      title: "SurveyJS Library json schema",
+      type: "object",
+      properties: {},
+      definitions: { locstring: this.generateLocStrClass() },
+    };
+    this.generateSchemaProperties(classInfo, res, res.definitions, true);
+    return res;
   }
-  private addPropertyCore(
-    property: JsonObjectProperty,
-    list: Array<JsonObjectProperty>,
-    endIndex: number
-  ) {
-    var index = -1;
-    for (var i = 0; i < endIndex; i++) {
-      if (list[i].name == property.name) {
-        index = i;
-        break;
+  private generateLocStrClass(): any {
+    const props: any = {};
+    const locProp = Serializer.findProperty("survey", "locale");
+    if(!!locProp) {
+      const choices = locProp.getChoices(null);
+      if(Array.isArray(choices)) {
+        if(choices.indexOf("en") < 0) {
+          choices.splice(0, 0, "en");
+        }
+        choices.splice(0, 0, "default");
+        choices.forEach(l => { if(!!l) { props[l] = { type: "string" }; } });
       }
     }
-    if (index < 0) {
-      list.push(property);
-    } else {
-      property.mergeWith(list[index]);
-      list[index] = property;
+    return {
+      $id: "locstring",
+      type: "object",
+      properties: props
+    };
+  }
+  private generateSchemaProperties(classInfo: JsonMetadataClass, classSchema: any, schemaDef: any, isRoot: boolean): void {
+    if (!classInfo) return;
+    const schemaProperties = classSchema.properties;
+    const requiredProps = [];
+    if(classInfo.name === "question" || classInfo.name === "panel") {
+      schemaProperties.type = { type: "string" };
+      requiredProps.push("type");
     }
+    for (let i = 0; i < classInfo.properties.length; i++) {
+      const prop = classInfo.properties[i];
+      if(!!classInfo.parentName && !!Serializer.findProperty(classInfo.parentName, prop.name)) continue;
+      schemaProperties[prop.name] = this.generateSchemaProperty(prop, schemaDef, isRoot);
+      if(prop.isRequired) requiredProps.push(prop.name);
+    }
+    if(requiredProps.length > 0) {
+      classSchema.required = requiredProps;
+    }
+  }
+  private generateSchemaProperty(prop: JsonObjectProperty, schemaDef: any, isRoot: boolean): any {
+    if(prop.isLocalizable) {
+      return { oneOf: [
+        { "type": "string" },
+        { "$ref": this.getChemeRefName("locstring", isRoot) }
+      ] };
+    }
+    const propType = prop.schemaType();
+    const refType = prop.schemaRef();
+    var res: any = { };
+    if(!!propType) {
+      res.type = propType;
+    }
+    if (prop.hasChoices) {
+      const enumRes = prop.getChoices(null);
+      if(Array.isArray(enumRes) && enumRes.length > 0) {
+        res.enum = this.getChoicesValues(enumRes);
+      }
+    }
+    if(!!refType) {
+      if(propType === "array") {
+        if(prop.className === "string") {
+          res.items = { type: prop.className };
+        } else {
+          res.items = { $ref: this.getChemeRefName(prop.className, isRoot) };
+        }
+      } else {
+        res["$ref"] = this.getChemeRefName(refType, isRoot);
+      }
+      this.generateChemaClass(prop.className, schemaDef, false);
+    }
+    if (!!prop.baseClassName) {
+      var usedClasses = this.getChildrenClasses(prop.baseClassName, true);
+      if (prop.baseClassName == "question") {
+        usedClasses.push(this.findClass("panel"));
+      }
+      res.items = { anyOf: [] };
+      for (var i = 0; i < usedClasses.length; i++) {
+        var className = usedClasses[i].name;
+        res.items.anyOf.push({ $ref: this.getChemeRefName(className, isRoot) });
+        this.generateChemaClass(className, schemaDef, false);
+      }
+    }
+    return res;
+  }
+  private getChemeRefName(className: string, isRoot: boolean): string {
+    //Fix for #6486, according to https://niem.github.io/json/reference/json-schema/references/#:~:text=In%20a%20JSON%20schema%2C%20a,%2C%20an%20in%2Dschema%20reference
+    //Checked by https://www.jsonschemavalidator.net/
+    return isRoot ? "#/definitions/" + className : className;
+  }
+  private generateChemaClass(className: string, schemaDef: any, isRoot: boolean) {
+    if (!!schemaDef[className]) return;
+    var classInfo = this.findClass(className);
+    if (!classInfo) return;
+    var hasParent = !!classInfo.parentName && classInfo.parentName != "base";
+    if (hasParent) {
+      this.generateChemaClass(classInfo.parentName, schemaDef, isRoot);
+    }
+    const res: any = { type: "object", $id: className };
+    schemaDef[className] = res;
+    const chemaProps: any = { properties: {} };
+    this.generateSchemaProperties(classInfo, chemaProps, schemaDef, isRoot);
+    if (hasParent) {
+      res.allOf = [
+        { $ref: this.getChemeRefName(classInfo.parentName, isRoot) },
+        { properties: chemaProps.properties },
+      ];
+    } else {
+      res.properties = chemaProps.properties;
+    }
+    if(Array.isArray(chemaProps.required)) {
+      res.required = chemaProps.required;
+    }
+  }
+  private getChoicesValues(enumRes: Array<any>): Array<any> {
+    const res = new Array<any>();
+    enumRes.forEach(item => {
+      if(typeof item === "object" && item.value !== undefined) {
+        res.push(item.value);
+      } else {
+        res.push(item);
+      }
+    });
+    return res;
   }
 }
 export class JsonError {
   public description: string = "";
-  public at: Number = -1;
-  constructor(public type: string, public message: string) {}
+  public at: number = -1;
+  public end: number = -1;
+  public jsonObj: any;
+  public element: Base;
+  constructor(public type: string, public message: string) { }
   public getFullDescription(): string {
     return this.message + (this.description ? "\n" + this.description : "");
   }
 }
 export class JsonUnknownPropertyError extends JsonError {
   constructor(public propertyName: string, public className: string) {
-    super(
-      "unknownproperty",
-      "The property '" +
-        propertyName +
-        "' in class '" +
-        className +
-        "' is unknown."
-    );
-    var properties = JsonObject.metaData.getProperties(className);
-    if (properties) {
-      this.description = "The list of available properties are: ";
-      for (var i = 0; i < properties.length; i++) {
-        if (i > 0) this.description += ", ";
-        this.description += properties[i].name;
-      }
-      this.description += ".";
-    }
+    super("unknownproperty", "Unknown property in class '" + className + "': '" + propertyName + "'.");
   }
 }
 export class JsonMissingTypeErrorBase extends JsonError {
@@ -815,13 +1603,6 @@ export class JsonMissingTypeErrorBase extends JsonError {
     public message: string
   ) {
     super(type, message);
-    this.description = "The following types are available: ";
-    var types = JsonObject.metaData.getChildrenClasses(baseClassName, true);
-    for (var i = 0; i < types.length; i++) {
-      if (i > 0) this.description += ", ";
-      this.description += "'" + types[i].name + "'";
-    }
-    this.description += ".";
   }
 }
 export class JsonMissingTypeError extends JsonMissingTypeErrorBase {
@@ -830,8 +1611,8 @@ export class JsonMissingTypeError extends JsonMissingTypeErrorBase {
       baseClassName,
       "missingtypeproperty",
       "The property type is missing in the object. Please take a look at property: '" +
-        propertyName +
-        "'."
+      propertyName +
+      "'."
     );
   }
 }
@@ -841,8 +1622,8 @@ export class JsonIncorrectTypeError extends JsonMissingTypeErrorBase {
       baseClassName,
       "incorrecttypeproperty",
       "The property type is incorrect in the object. Please take a look at property: '" +
-        propertyName +
-        "'."
+      propertyName +
+      "'."
     );
   }
 }
@@ -851,11 +1632,22 @@ export class JsonRequiredPropertyError extends JsonError {
     super(
       "requiredproperty",
       "The property '" +
-        propertyName +
-        "' is required in class '" +
-        className +
-        "'."
+      propertyName +
+      "' is required in class '" +
+      className +
+      "'."
     );
+  }
+}
+export class JsonRequiredArrayPropertyError extends JsonError {
+  constructor(public propertyName: string, public className: string) {
+    super("arrayproperty", "The property '" + propertyName + "' should be an array in '" + className + "'.");
+  }
+}
+
+export class JsonIncorrectPropertyValueError extends JsonError {
+  constructor(public property: JsonObjectProperty, public value: any) {
+    super("incorrectvalue", "The property value: '" + value + "' is incorrect for property '" + property.name + "'.");
   }
 }
 
@@ -868,25 +1660,34 @@ export class JsonObject {
   }
   public errors = new Array<JsonError>();
   public lightSerializing: boolean = false;
-  public toJsonObject(obj: any, storeDefaults = false): any {
-    return this.toJsonObjectCore(obj, null, storeDefaults);
+  public options: ILoadFromJSONOptions;
+  public toJsonObject(obj: any, options?: ISaveToJSONOptions | boolean): any {
+    return this.toJsonObjectCore(obj, null, options);
   }
-  public toObject(jsonObj: any, obj: any) {
+  public toObject(jsonObj: any, obj: any, options?: ILoadFromJSONOptions): void {
+    this.toObjectCore(jsonObj, obj, options);
+    var error = this.getRequiredError(obj, jsonObj);
+    if (!!error) {
+      this.addNewError(error, jsonObj, obj);
+    }
+  }
+  public toObjectCore(jsonObj: any, obj: any, options?: ILoadFromJSONOptions): void {
     if (!jsonObj) return;
     var properties = null;
     var objType = undefined;
     var needAddErrors = true;
     if (obj.getType) {
       objType = obj.getType();
-      properties = JsonObject.metaData.getProperties(objType);
+      properties = Serializer.getProperties(objType);
       needAddErrors =
-        !!objType && !JsonObject.metaData.isDescendantOf(objType, "itemvalue");
+        !!objType && !Serializer.isDescendantOf(objType, "itemvalue");
     }
     if (!properties) return;
     if (obj.startLoadingFromJson) {
-      obj.startLoadingFromJson();
+      obj.startLoadingFromJson(jsonObj);
     }
     properties = this.addDynamicProperties(obj, jsonObj, properties);
+    this.options = options;
     for (var key in jsonObj) {
       if (key === JsonObject.typePropertyName) continue;
       if (key === JsonObject.positionPropertyName) {
@@ -896,23 +1697,21 @@ export class JsonObject {
       var property = this.findProperty(properties, key);
       if (!property) {
         if (needAddErrors) {
-          this.addNewError(
-            new JsonUnknownPropertyError(key.toString(), objType),
-            jsonObj
-          );
+          this.addNewError(new JsonUnknownPropertyError(key.toString(), objType), jsonObj, obj);
         }
         continue;
       }
-      this.valueToObj(jsonObj[key], obj, property);
+      this.valueToObj(jsonObj[key], obj, property, jsonObj, options);
     }
+    this.options = undefined;
     if (obj.endLoadingFromJson) {
       obj.endLoadingFromJson();
     }
   }
-  protected toJsonObjectCore(
+  public toJsonObjectCore(
     obj: any,
     property: JsonObjectProperty,
-    storeDefaults = false
+    options?: ISaveToJSONOptions | boolean
   ): any {
     if (!obj || !obj.getType) return obj;
     if (typeof obj.getData === "function") return obj.getData();
@@ -922,125 +1721,147 @@ export class JsonObject {
         obj.getType()
       );
     }
+    const storeDefaults = options === true;
+    if(!options || options === true) {
+      options = { };
+    }
+    if(storeDefaults) {
+      options.storeDefaults = storeDefaults;
+    }
     this.propertiesToJson(
       obj,
-      JsonObject.metaData.getProperties(obj.getType()),
+      Serializer.getProperties(obj.getType()),
       result,
-      storeDefaults
+      options
     );
     this.propertiesToJson(
       obj,
       this.getDynamicProperties(obj),
       result,
-      storeDefaults
+      options
     );
     return result;
   }
   private getDynamicProperties(obj: any): Array<JsonObjectProperty> {
-    if (obj.getDynamicProperties && obj.getDynamicType) {
-      var names = obj.getDynamicProperties();
-      return JsonObject.metaData.findProperties(obj.getDynamicType(), names);
-    }
-    return [];
+    return Serializer.getDynamicPropertiesByObj(obj);
   }
   private addDynamicProperties(
     obj: any,
     jsonObj: any,
-    properties: Array<JsonObjectProperty>
+    props: Array<JsonObjectProperty>
   ): Array<JsonObjectProperty> {
-    if (!obj.getDynamicPropertyName) return properties;
-    var dynamicPropName = obj.getDynamicPropertyName();
-    if (!dynamicPropName) return properties;
-    if (jsonObj[dynamicPropName]) {
-      obj[dynamicPropName] = jsonObj[dynamicPropName];
+    if (!obj.getDynamicPropertyName && !obj.getDynamicProperties) return props;
+    if(obj.getDynamicPropertyName) {
+      const dynamicPropName = obj.getDynamicPropertyName();
+      if (!dynamicPropName) return props;
+      if (dynamicPropName && jsonObj[dynamicPropName]) {
+        obj[dynamicPropName] = jsonObj[dynamicPropName];
+      }
     }
-    var dynamicProperties = this.getDynamicProperties(obj);
-    var res = [];
-    for (var i = 0; i < properties.length; i++) {
-      res.push(properties[i]);
-    }
-    for (var i = 0; i < dynamicProperties.length; i++) {
-      res.push(dynamicProperties[i]);
-    }
-    return res;
+    const dynamicProps = this.getDynamicProperties(obj);
+    return dynamicProps.length === 0 ? props : [].concat(props).concat(dynamicProps);
   }
   private propertiesToJson(
     obj: any,
     properties: Array<JsonObjectProperty>,
     json: any,
-    storeDefaults = false
+    options: ISaveToJSONOptions
   ) {
     for (var i: number = 0; i < properties.length; i++) {
-      this.valueToJson(obj, json, properties[i], storeDefaults);
+      this.valueToJson(obj, json, properties[i], options);
     }
   }
-  public valueToJson(
-    obj: any,
-    result: any,
-    property: JsonObjectProperty,
-    storeDefaults = false
-  ) {
-    if (
-      property.isSerializable === false ||
-      (property.isLightSerializable === false && this.lightSerializing)
-    )
+  public valueToJson(obj: any, result: any, prop: JsonObjectProperty, options?: ISaveToJSONOptions): void {
+    if(!options) options = {};
+    if (prop.isSerializable === false || (prop.isLightSerializable === false && this.lightSerializing)) return;
+    if(options.version && !prop.isAvailableInVersion(options.version)) return;
+    this.valueToJsonCore(obj, result, prop, options);
+  }
+  private valueToJsonCore(obj: any, result: any, prop: JsonObjectProperty, options?: ISaveToJSONOptions): void {
+    const serProp = prop.getSerializedProperty(obj, options.version);
+    if(serProp && serProp !== prop) {
+      this.valueToJsonCore(obj, result, serProp, options);
       return;
-    var value = property.getValue(obj);
-    if (!storeDefaults && property.isDefaultValue(value)) return;
+    }
+    var value = prop.getSerializableValue(obj);
+    if (!options.storeDefaults && prop.isDefaultValueByObj(obj, value)) return;
     if (this.isValueArray(value)) {
       var arrValue = [];
       for (var i = 0; i < value.length; i++) {
-        arrValue.push(this.toJsonObjectCore(value[i], property, storeDefaults));
+        arrValue.push(this.toJsonObjectCore(value[i], prop, options));
       }
       value = arrValue.length > 0 ? arrValue : null;
     } else {
-      value = this.toJsonObjectCore(value, property, storeDefaults);
+      value = this.toJsonObjectCore(value, prop, options);
     }
+    if(value === undefined || value === null) return;
+    const name = prop.getSerializedName(options.version);
     var hasValue =
       typeof obj["getPropertyValue"] === "function" &&
-      obj["getPropertyValue"](property.name, null) !== null;
-    if ((storeDefaults && hasValue) || !property.isDefaultValue(value)) {
-      result[property.name] = value;
+      obj["getPropertyValue"](name, null) !== null;
+    if ((options.storeDefaults && hasValue) || !prop.isDefaultValueByObj(obj, value)) {
+      if (!Serializer.onSerializingProperty || !Serializer.onSerializingProperty(obj, prop, value, result)) {
+        result[name] = this.removePosOnValueToJson(prop, value);
+      }
     }
   }
-  protected valueToObj(value: any, obj: any, property: JsonObjectProperty) {
-    if (value == null) return;
+  public valueToObj(value: any, obj: any, property: JsonObjectProperty, jsonObj?: any, options?: ILoadFromJSONOptions): void {
+    if (value === null || value === undefined) return;
     this.removePos(property, value);
     if (property != null && property.hasToUseSetValue) {
       property.setValue(obj, value, this);
       return;
     }
+    if(property.isArray && !Array.isArray(value) && !!value) {
+      value = [value];
+      const propName = !!jsonObj && property.alternativeName && !!jsonObj[property.alternativeName] ? property.alternativeName : property.name;
+      this.addNewError(new JsonRequiredArrayPropertyError(propName, obj.getType()), !!jsonObj ? jsonObj: value, obj);
+    }
     if (this.isValueArray(value)) {
-      this.valueToArray(value, obj, property.name, property);
+      this.valueToArray(value, obj, property.name, property, options);
       return;
     }
     var newObj = this.createNewObj(value, property);
     if (newObj.newObj) {
-      this.toObject(value, newObj.newObj);
+      this.toObjectCore(value, newObj.newObj, options);
       value = newObj.newObj;
     }
     if (!newObj.error) {
       if (property != null) {
         property.setValue(obj, value, this);
+        if(!!options && options.validatePropertyValues) {
+          if(!property.validateValue(value)) {
+            this.addNewError(new JsonIncorrectPropertyValueError(property, value), jsonObj, obj);
+          }
+        }
       } else {
         obj[property.name] = value;
       }
     }
   }
-  private removePos(property: JsonObjectProperty, value: any) {
+  private removePosOnValueToJson(property: JsonObjectProperty, value: any): any {
+    if(!property.isCustom || !value) return value;
+    this.removePosFromObj(value);
+    return value;
+  }
+  private removePos(property: JsonObjectProperty, value: any): void {
     if (!property || !property.type || property.type.indexOf("value") < 0)
       return;
     this.removePosFromObj(value);
   }
   private removePosFromObj(obj: any) {
-    if (!obj) return;
+    if (!obj || typeof obj.getType === "function") return;
     if (Array.isArray(obj)) {
       for (var i = 0; i < obj.length; i++) {
         this.removePosFromObj(obj[i]);
       }
     }
+    if(typeof obj !== "object") return;
     if (!!obj[JsonObject.positionPropertyName]) {
       delete obj[JsonObject.positionPropertyName];
+    }
+    for(let key in obj) {
+      this.removePosFromObj(obj[key]);
     }
   }
   private isValueArray(value: any): boolean {
@@ -1048,13 +1869,9 @@ export class JsonObject {
   }
   private createNewObj(value: any, property: JsonObjectProperty): any {
     var result: any = { newObj: null, error: null };
-    var className = value[JsonObject.typePropertyName];
-    if (!className && property != null && property.className) {
-      className = property.className;
-    }
-    className = property.getClassName(className);
+    const className = this.getClassNameForNewObj(value, property);
     result.newObj = className
-      ? JsonObject.metaData.createClass(className, value)
+      ? Serializer.createClass(className, value)
       : null;
     result.error = this.checkNewObjectOnErrors(
       result.newObj,
@@ -1064,6 +1881,19 @@ export class JsonObject {
     );
     return result;
   }
+  private getClassNameForNewObj(value: any, property: JsonObjectProperty): string {
+    var res = property != null && property.className ? property.className : undefined;
+    if (!res) {
+      res = value[JsonObject.typePropertyName];
+    }
+    if(!res) return res;
+    res = res.toLowerCase();
+    const classNamePart = property.classNamePart;
+    if(classNamePart && res.indexOf(classNamePart) < 0) {
+      res += classNamePart;
+    }
+    return res;
+  }
   private checkNewObjectOnErrors(
     newObj: any,
     value: any,
@@ -1072,20 +1902,7 @@ export class JsonObject {
   ): JsonError {
     var error = null;
     if (newObj) {
-      var requiredProperties = JsonObject.metaData.getRequiredProperties(
-        className
-      );
-      if (requiredProperties) {
-        for (var i = 0; i < requiredProperties.length; i++) {
-          if (!value[requiredProperties[i]]) {
-            error = new JsonRequiredPropertyError(
-              requiredProperties[i],
-              className
-            );
-            break;
-          }
-        }
-      }
+      error = this.getRequiredError(newObj, value);
     } else {
       if (property.baseClassName) {
         if (!className) {
@@ -1102,35 +1919,69 @@ export class JsonObject {
       }
     }
     if (error) {
-      this.addNewError(error, value);
+      this.addNewError(error, value, newObj);
     }
     return error;
   }
-  private addNewError(error: JsonError, jsonObj: any) {
-    if (jsonObj && jsonObj[JsonObject.positionPropertyName]) {
-      error.at = jsonObj[JsonObject.positionPropertyName].start;
+  private getRequiredError(obj: any, jsonValue: any): JsonError {
+    if (!obj.getType || typeof obj.getData === "function") return null;
+    const metaClass = Serializer.findClass(obj.getType());
+    if(!metaClass) return null;
+    const props = metaClass.getRequiredProperties();
+    if (!Array.isArray(props)) return null;
+    for (var i = 0; i < props.length; i++) {
+      const prop = props[i];
+      if (!Helpers.isValueEmpty(prop.defaultValue)) continue;
+      if (!jsonValue[prop.name]) {
+        return new JsonRequiredPropertyError(prop.name, obj.getType());
+      }
     }
+    return null;
+  }
+  private addNewError(error: JsonError, jsonObj: any, element?: Base) {
+    error.jsonObj = jsonObj;
+    error.element = element;
     this.errors.push(error);
+    if(!jsonObj) return;
+    const posObj = jsonObj[JsonObject.positionPropertyName];
+    if(!posObj) return;
+    error.at = posObj.start;
+    error.end = posObj.end;
   }
   private valueToArray(
     value: Array<any>,
     obj: any,
     key: any,
-    property: JsonObjectProperty
+    property: JsonObjectProperty,
+    options?: ILoadFromJSONOptions
   ) {
+    if (obj[key] && !this.isValueArray(obj[key]))
+      return;
     if (obj[key] && value.length > 0) obj[key].splice(0, obj[key].length);
-    if (!obj[key]) obj[key] = [];
+    var valueRes = obj[key] ? obj[key] : [];
+    this.addValuesIntoArray(value, valueRes, property, options);
+    if (!obj[key]) obj[key] = valueRes;
+  }
+  private addValuesIntoArray(
+    value: Array<any>,
+    result: Array<any>,
+    property: JsonObjectProperty,
+    options?: ILoadFromJSONOptions
+  ) {
     for (var i = 0; i < value.length; i++) {
       var newValue = this.createNewObj(value[i], property);
       if (newValue.newObj) {
         if (!!value[i].name) {
           newValue.newObj.name = value[i].name;
         }
-        obj[key].push(newValue.newObj);
-        this.toObject(value[i], newValue.newObj);
+        if (!!value[i].valueName) {
+          newValue.newObj.valueName = value[i].valueName.toString();
+        }
+        result.push(newValue.newObj);
+        this.toObjectCore(value[i], newValue.newObj, options);
       } else {
         if (!newValue.error) {
-          obj[key].push(value[i]);
+          result.push(value[i]);
         }
       }
     }
@@ -1148,4 +1999,8 @@ export class JsonObject {
   }
 }
 
+/**
+ * An alias for the metadata object. It contains object properties' runtime information and allows you to modify it.
+ * @see JsonMetadata
+ */
 export var Serializer = JsonObject.metaData;

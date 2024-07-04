@@ -1,13 +1,21 @@
-import * as ko from "knockout";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
+import { Serializer } from "survey-core";
+import { QuestionFactory } from "survey-core";
 import { QuestionImplementor } from "./koquestion";
-import { QuestionHtmlModel } from "../question_html";
+import { QuestionHtmlModel } from "survey-core";
 
 export class QuestionHtml extends QuestionHtmlModel {
-  constructor(public name: string) {
+  private _implementor: QuestionImplementor;
+  constructor(name: string) {
     super(name);
-    new QuestionImplementor(this);
+  }
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionImplementor(this);
+  }
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 

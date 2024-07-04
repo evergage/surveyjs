@@ -1,4 +1,4 @@
-import { HashTable } from "../helpers";
+import { HashTable } from "survey-core";
 
 export class ReactElementFactory {
   public static Instance: ReactElementFactory = new ReactElementFactory();
@@ -6,7 +6,7 @@ export class ReactElementFactory {
 
   public registerElement(
     elementType: string,
-    elementCreator: (name: string) => JSX.Element
+    elementCreator: (props: any) => JSX.Element
   ) {
     this.creatorHash[elementType] = elementCreator;
   }
@@ -17,10 +17,10 @@ export class ReactElementFactory {
     }
     return result.sort();
   }
-  public isElementRegisgered(elementType: string) {
+  public isElementRegistered(elementType: string) {
     return !!this.creatorHash[elementType];
   }
-  public createElement(elementType: string, params: any): JSX.Element {
+  public createElement(elementType: string, params: any): JSX.Element | any {
     var creator = this.creatorHash[elementType];
     if (creator == null) return null;
     return creator(params);

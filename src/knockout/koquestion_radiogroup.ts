@@ -1,26 +1,21 @@
-import * as ko from "knockout";
-import { QuestionRadiogroupModel } from "../question_radiogroup";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
+import { QuestionRadiogroupModel } from "survey-core";
+import { Serializer } from "survey-core";
+import { QuestionFactory } from "survey-core";
 import { QuestionCheckboxBaseImplementor } from "./koquestion_baseselect";
 
 export class QuestionRadiogroup extends QuestionRadiogroupModel {
-  constructor(public name: string) {
+  private _implementor: QuestionCheckboxBaseImplementor;
+  constructor(name: string) {
     super(name);
-    new QuestionCheckboxBaseImplementor(this);
   }
-  getItemClass(item: any) {
-    var itemClass = this.cssClasses.item;
-
-    if (!this.hasColumns) {
-      itemClass +=
-        this.colCount === 0
-          ? " sv_q_radiogroup_inline"
-          : " sv-q-col-" + this.colCount;
-    }
-
-    if (item.value === this.value) itemClass += " checked";
-    return itemClass;
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionCheckboxBaseImplementor(this);
+  }
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 

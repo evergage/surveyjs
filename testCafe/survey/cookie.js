@@ -1,17 +1,10 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `cookie`;
+import { frameworks, url, initSurvey } from "../helper";
+import { ClientFunction, Selector, fixture, test } from "testcafe";
+const title = "cookie";
 const deleteCookie = ClientFunction(() => {
-  survey.deleteCookie();
-  survey.clear();
-  survey.render();
+  window["survey"].deleteCookie();
+  window["survey"].clear();
+  window["survey"].render();
 });
 
 const json = {
@@ -47,23 +40,18 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`check works and delete`, async t => {
-    const getPosition = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf(
-        "Thank you for completing the survey!"
-      )
-    );
-
-    await t.click(`input[type=checkbox]`).click(`input[value=Complete]`);
-
-    await t.navigateTo(`http://surveyjs.io`).navigateTo(url + framework);
+  test("check works and delete", async t => {
+    await t
+      .click("input[type=checkbox]")
+      .click("input[value=Complete]")
+      .navigateTo("https://www.google.com")
+      .navigateTo(url + framework);
     await initSurvey(framework, json);
 
-    assert.notEqual(await getPosition(), -1);
-
+    await t.expect(Selector(".sv_body h3").withText("You have already completed this survey.").visible).ok();
     await deleteCookie();
-    await t.hover(`input[type=checkbox]`);
+    await t.hover("input[type=checkbox]");
 
-    assert.equal(await getPosition(), -1);
+    await t.expect(Selector(".sv_body h3").withText("You have already completed this survey.").exist).notOk();
   });
 });

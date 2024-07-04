@@ -1,219 +1,150 @@
 <template>
-  <div :class="css.root">
-    <form onsubmit="return false;">
-      <div class="sv_custom_header"></div>
-      <div class="sv_container">
-        <div v-if="hasTitle" :class="css.header">
-          <h3>
-            <survey-string :locString="survey.locTitle"/>
-          </h3>
-          <h5>
-            <survey-string :locString="survey.locDescription"/>
-          </h5>
-        </div>
-        <template v-if="survey.state === 'starting'">
-          <div :class="css.body">
-            <div
-              v-if="survey.isNavigationButtonsShowing === 'top' || survey.isNavigationButtonsShowing === 'both'"
-              :class="css.footer"
-            >
-              <input
-                type="button"
-                :value="survey.startSurveyText"
-                :class="getNavBtnClasses('start')"
-                @click="start"
-              >
+  <div :class="survey.getRootCss()"
+    :style="vueSurvey.themeVariables"
+    :lang="vueSurvey.locale || 'en'" :dir="vueSurvey.localeDir"
+    >
+    <sv-svg-bundle v-if="vueSurvey.needRenderIcons"></sv-svg-bundle>
+    <div :class="vueSurvey.wrapperFormCss">
+      <div v-if="vueSurvey.renderBackgroundImage" :class="css.rootBackgroundImage" :style="vueSurvey.backgroundImageStyle"></div>
+      <form onsubmit="return false;">
+        <div v-if="!vueSurvey.hasLogo" class="sv_custom_header"></div>
+        <div :class="css.container">
+          <survey-header v-if="vueSurvey.headerView === 'basic'" :survey="vueSurvey" />
+          <component :is="'sv-components-container'" :survey="vueSurvey" :container="'header'"></component>
+          <template
+            v-if="vueSurvey.isShowingPage"
+          >
+            <div :class="vueSurvey.bodyContainerCss">
+              <component :is="'sv-components-container'" :survey="vueSurvey" :container="'left'"></component>
+              <div class="sv-components-column sv-components-column--expandable">
+                <component :is="'sv-components-container'" :survey="vueSurvey" :container="'center'"></component>
+                <div :class="vueSurvey.bodyCss"  :style="{maxWidth: survey.renderedWidth}" :id="pageId">
+                  <component :is="'sv-components-container'" :survey="vueSurvey" :container="'contentTop'"></component>
+                  <survey-page
+                    :key="pageKey"
+                    :survey="vueSurvey"
+                    :page="vueSurvey.activePage"
+                    :css="css"
+                  />
+                  <component :is="'sv-components-container'" :survey="vueSurvey" :container="'contentBottom'"></component>
+                </div>
+              </div>
+              <component :is="'sv-components-container'" :survey="vueSurvey" :container="'right'"></component>
             </div>
-            <survey-page
-              :id="survey.startedPage.id"
-              :survey="survey"
-              :page="survey.startedPage"
-              :css="css"
-            />
+          </template>
+          <component :is="'sv-components-container'" :survey="vueSurvey" :container="'footer'"></component>
+          <div v-if="hasCompletedPage">
             <div
-              v-if="survey.isNavigationButtonsShowing === 'bottom' || survey.isNavigationButtonsShowing === 'both'"
-              :class="css.footer"
-            >
-              <input
-                type="button"
-                :value="survey.startSurveyText"
-                :class="getNavBtnClasses('start')"
-                @click="start"
-              >
-            </div>
+              v-html="getProcessedCompletedHtml()"
+              :class="vueSurvey.completedCss"
+            ></div>
+            <component :is="'sv-components-container'" :survey="vueSurvey" :container="'completePage'"></component>
           </div>
-        </template>
-        <template v-if="survey.state === 'running'">
-          <div :class="css.body">
-            <survey-progress v-if="survey.isShowProgressBarOnTop" :survey="survey" :css="css"/>
-            <survey-timerpanel v-if="survey.isTimerPanelShowingOnTop" :survey="survey" :css="css"/>
-            <div
-              v-if="survey.isNavigationButtonsShowing === 'top' || survey.isNavigationButtonsShowing === 'both'"
-              :class="css.footer"
-            >
-              <input
-                type="button"
-                :value="survey.pagePrevText"
-                v-show="!survey.isFirstPage && survey.isShowPrevButton"
-                :class="getNavBtnClasses('prev')"
-                @click="prevPage"
-              >
-              <input
-                type="button"
-                :value="survey.pageNextText"
-                v-show="!survey.isLastPage"
-                :class="getNavBtnClasses('next')"
-                @click="nextPage"
-              >
-              <input
-                v-if="survey.isEditMode"
-                type="button"
-                :value="survey.completeText"
-                v-show="survey.isLastPage"
-                :class="getNavBtnClasses('complete')"
-                @click="completeLastPage"
-              >
-            </div>
-            <survey-page
-              :id="survey.currentPage.id"
-              :survey="survey"
-              :page="survey.currentPage"
-              :css="css"
-            />
-            <survey-timerpanel
-              v-if="survey.isTimerPanelShowingOnBottom"
-              :survey="survey"
-              :css="css"
-            />
-            <survey-progress
-              style="margin-top: 1em"
-              v-if="survey.isShowProgressBarOnBottom"
-              :survey="survey"
-              :css="css"
-            />
-            <div
-              v-if="survey.isNavigationButtonsShowing === 'bottom' || survey.isNavigationButtonsShowing === 'both'"
-              :class="css.footer"
-            >
-              <input
-                type="button"
-                :value="survey.pagePrevText"
-                v-show="!survey.isFirstPage && survey.isShowPrevButton"
-                :class="getNavBtnClasses('prev')"
-                @click="prevPage"
-              >
-              <input
-                type="button"
-                :value="survey.pageNextText"
-                v-show="!survey.isLastPage"
-                :class="getNavBtnClasses('next')"
-                @click="nextPage"
-              >
-              <input
-                v-if="survey.isEditMode"
-                type="button"
-                :value="survey.completeText"
-                v-show="survey.isLastPage"
-                :class="getNavBtnClasses('complete')"
-                @click="completeLastPage"
-              >
-            </div>
-          </div>
-        </template>
-        <div v-if="hasCompletedPage">
-          <div v-html="survey.processedCompletedHtml" :class="getCompletedPageClasses()"></div>
-          <div v-if="survey.completedState != ''" :class="css.saveData.root">
-            <div :class="getCompletedStateClasses()">
-              <span>{{survey.completedStateText}}</span>
-              <input
-                type="button"
-                v-if="survey.completedState == 'error'"
-                :value="survey.getLocString('saveAgainButton')"
-                @click="doTrySaveAgain"
-                :class="css.saveData.saveAgainButton"
-              >
-            </div>
+          <div
+            v-if="vueSurvey.state === 'completedbefore'"
+            :class="vueSurvey.completedBeforeCss"
+            v-html="vueSurvey.processedCompletedBeforeHtml"
+          ></div>
+          <div
+            v-if="vueSurvey.state === 'loading'"
+            :class="vueSurvey.loadingBodyCss"
+            v-html="vueSurvey.processedLoadingHtml"
+          ></div>
+          <div v-if="vueSurvey.state === 'empty'" :class="css.bodyEmpty">
+            {{ vueSurvey.emptySurveyText }}
           </div>
         </div>
-        <div
-          v-if="survey.state === 'completedbefore'"
-          :class="css.body"
-          v-html="survey.processedCompletedBeforeHtml"
-        ></div>
-        <div
-          v-if="survey.state === 'loading'"
-          :class="css.body"
-          v-html="survey.processedLoadingHtml"
-        ></div>
-        <div v-if="survey.state === 'empty'" :class="css.bodyEmpty">{{survey.emptySurveyText}}</div>
-      </div>
-    </form>
+      </form>
+      <sv-brand-info v-if="vueSurvey.showBrandInfo"></sv-brand-info>
+      <sv-notifier :model="vueSurvey.notifier"></sv-notifier>
+    </div>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
-import { Component, Prop } from "vue-property-decorator";
-import { surveyCss } from "../defaultCss/cssstandard";
-import { VueSurveyModel as SurveyModel } from "./surveyModel";
+import { Component, Prop, Watch } from "vue-property-decorator";
+import { Base, StylesManager, surveyCss, SvgRegistry, SurveyModel, doKey2ClickUp, IAttachKey2clickOptions } from "survey-core";
+import { BaseVue } from "./base";
 
 @Component
-export class Survey extends Vue {
-  @Prop survey: SurveyModel;
-
-  forceUpdate() {
-    this.$forceUpdate();
+export class Survey extends BaseVue {
+  @Prop() survey: SurveyModel;
+  @Prop() model: SurveyModel;
+  processedCompletedHtmlValue: string;
+  updater: number = 1;
+  get pageKey() {
+    return "page" + this.getActivePageId();
+  }
+  get navId() {
+    return "nav" + this.getActivePageId();
   }
 
   constructor() {
     super();
   }
-
-  mounted() {
+  protected getModel(): Base {
+    return this.vueSurvey;
+  }
+  public get vueSurvey(): SurveyModel {
+    return !!this.survey ? this.survey : this.model;
+  }
+  @Watch("model")
+  @Watch("survey")
+  onPropertyChanged(value: string, oldValue: string) {
+    this.onCreated();
+    this.surveyOnMounted();
+  }
+  forceUpdate() {
+    this.updater += 1;
+    this.$forceUpdate();
+  }
+  protected onMounted() {
+    this.surveyOnMounted();
+  }
+  get pageId(): string {
+    return !!this.vueSurvey.activePage ? this.vueSurvey.activePage.id : "";
+  }
+  private getActivePageId(): string {
+    const pageId = this.pageId;
+    return !!this.vueSurvey && pageId + this.updater.toString();
+  }
+  private surveyOnMounted() {
+    if (!this.vueSurvey) return;
     var el = this.$el;
-    if (el && this.survey) this.survey.doAfterRenderSurvey(el);
-    this.survey.renderCallback = this.forceUpdate;
-    this.survey.startTimerFromUI();
+    if (el) this.vueSurvey.afterRenderSurvey(el);
+    this.vueSurvey.valueHashSetDataCallback = (valuesHash: any, key: string, value: any): void => {
+      Vue.set(valuesHash, key, value);
+    };
+    this.vueSurvey.valueHashDeleteDataCallback = (valuesHash: any, key: string): void => {
+      Vue.delete(valuesHash, key);
+    };
+    this.vueSurvey.renderCallback = this.forceUpdate;
+    this.vueSurvey.startTimerFromUI();
   }
   beforeDestroy() {
-    this.survey.stopTimer();
-    this.survey.renderCallback = undefined;
+    this.vueSurvey.stopTimer();
+    this.vueSurvey.renderCallback = undefined;
   }
 
   get hasTitle() {
-    return !!this.survey.title && this.survey.showTitle;
+    return !!this.vueSurvey.title && this.vueSurvey.showTitle;
   }
   get hasCompletedPage() {
-    return this.survey.showCompletedPage && this.survey.state === "completed";
+    return this.vueSurvey.showCompletedPage && this.vueSurvey.state === "completed";
   }
   get css() {
-    return this.survey.css;
+    return this.vueSurvey.css;
   }
-  getNavBtnClasses(btnType: any) {
-    const btnClass = this.css.navigation[btnType];
-    return this.css.navigationButton + " " + btnClass;
-  }
-  getCompletedPageClasses() {
-    var css = this.css;
-    return css.body + " " + css.completedPage;
-  }
-  getCompletedStateClasses() {
-    return this.css.saveData[this.survey.completedState];
+  getProcessedCompletedHtml() {
+    if (!this.hasCompletedPage) return "";
+    if (!this.processedCompletedHtmlValue) {
+      this.processedCompletedHtmlValue = this.vueSurvey.processedCompletedHtml;
+    }
+    return this.processedCompletedHtmlValue;
   }
   start() {
-    this.survey.start();
-  }
-  prevPage() {
-    this.survey.prevPage();
-  }
-  nextPage() {
-    this.survey.nextPage();
-  }
-  completeLastPage() {
-    this.survey.completeLastPage();
-  }
-  doTrySaveAgain() {
-    this.survey.doComplete();
+    this.vueSurvey.start();
   }
 }
 
@@ -223,10 +154,10 @@ Object.defineProperty(Survey, "cssType", {
     return surveyCss.currentType;
   },
   set: function(newType) {
-    surveyCss.currentType = newType;
+    StylesManager.applyTheme(newType);
   },
   enumerable: true,
-  configurable: false
+  configurable: false,
 });
 
 Vue.component("survey", Survey);

@@ -1,188 +1,213 @@
 import * as React from "react";
-import { Question } from "../question";
-import { SurveyElement, SurveyError } from "../base";
-import { SurveyQuestionCommentItem } from "./reactquestioncomment";
-import { SurveyElementBase, ReactSurveyElement } from "./reactquestionelement";
-import { SurveyCustomWidget } from "./custom-widget";
+import {
+  Base,
+  SurveyElement,
+  SurveyError,
+  Question,
+  QuestionMatrixDropdownRenderedCell,
+  SurveyModel
+} from "survey-core";
+import { ReactSurveyElementsWrapper } from "./reactsurveymodel";
 import { ReactElementFactory } from "./element-factory";
+import { SurveyElementBase, ReactSurveyElement } from "./reactquestion_element";
+import { SurveyQuestionCommentItem } from "./reactquestion_comment";
+import { SurveyCustomWidget } from "./custom-widget";
+import { SurveyElementHeader } from "./element-header";
 
 export interface ISurveyCreator {
-  createQuestionElement(question: Question): JSX.Element;
-  renderError(key: string, error: SurveyError, cssClasses: any): JSX.Element;
+  createQuestionElement(question: Question): JSX.Element | null;
+  renderError(key: string, error: SurveyError, cssClasses: any, element?: any): JSX.Element;
   questionTitleLocation(): string;
   questionErrorLocation(): string;
 }
 
-export class SurveyQuestion extends SurveyElementBase {
+export class SurveyQuestion extends SurveyElementBase<any, any> {
+  private isNeedFocus = false;
   public static renderQuestionBody(
     creator: ISurveyCreator,
     question: Question
-  ): JSX.Element {
-    if (!question.visible) return null;
+  ): JSX.Element | any {
+    // if (!question.isVisible) return null;
     var customWidget = question.customWidget;
     if (!customWidget) {
       return creator.createQuestionElement(question);
     }
     return <SurveyCustomWidget creator={creator} question={question} />;
   }
-  protected question: Question;
-  private creator: ISurveyCreator;
+  private rootRef: React.RefObject<HTMLDivElement>;
   constructor(props: any) {
     super(props);
-    this.updateProps(props);
+    this.rootRef = React.createRef();
   }
-  private updateProps(props: any) {
-    this.creator = props.creator;
-    this.question = props.element;
+  protected getStateElement(): Base {
+    return this.question;
   }
-  componentWillReceiveProps(nextProps: any) {
-    this.unMakeBaseElementReact(this.question);
-    this.updateProps(nextProps);
-    this.makeBaseElementReact(this.question);
+  protected get question(): Question {
+    return this.props.element;
   }
-  componentWillMount() {
-    this.makeBaseElementReact(this.question);
+  private get creator(): ISurveyCreator {
+    return this.props.creator;
   }
   componentDidMount() {
+    super.componentDidMount();
     if (!!this.question) {
       this.question["react"] = this;
     }
     this.doAfterRender();
   }
   componentWillUnmount() {
+    super.componentWillUnmount();
     if (!!this.question) {
       this.question["react"] = null;
     }
-    this.unMakeBaseElementReact(this.question);
-    var el: any = this.refs["root"];
+    const el = this.rootRef.current;
     if (!!el) {
       el.removeAttribute("data-rendered");
     }
   }
   componentDidUpdate(prevProps: any, prevState: any) {
+    super.componentDidUpdate(prevProps, prevState);
     this.doAfterRender();
   }
   private doAfterRender() {
+    if (this.isNeedFocus) {
+      if (!this.question.isCollapsed) {
+        this.question.clickTitleFunction();
+      }
+      this.isNeedFocus = false;
+    }
     if (this.question) {
-      var el: any = this.refs["root"];
-      if (
-        el &&
-        this.question.survey &&
-        el.getAttribute("data-rendered") !== "r"
-      ) {
+      var el = this.rootRef.current;
+      if (el && el.getAttribute("data-rendered") !== "r") {
         el.setAttribute("data-rendered", "r");
-        this.question.survey.afterRenderQuestion(this.question, el);
+        el.setAttribute("data-name", this.question.name);
+        if (this.question.afterRender) {
+          this.question.afterRender(el);
+        }
       }
     }
   }
-  render(): JSX.Element {
-    if (!this.question || !this.creator) return null;
-    if (!this.question.isVisible) return null;
-    var cssClasses = this.question.cssClasses;
-    var questionRender = this.renderQuestion();
-    var title = this.question.hasTitle ? this.renderTitle(cssClasses) : null;
-    var description = this.renderDescription(cssClasses);
-    var titleLocation = this.question ? this.question.getTitleLocation() : "";
-    var titleTop = titleLocation === "top" ? title : null;
-    var titleBottom = titleLocation === "bottom" ? title : null;
-    var titleLeft = titleLocation === "left" ? title : null;
-    var titleLeftClass = titleLocation === "left" ? "title-left" : null;
-    var contentLeftClass = titleLocation === "left" ? "content-left" : null;
-    var descriptionLeft = titleLocation === "left" ? description : null;
-    var descriptionTop = titleLocation === "top" ? description : null;
-    var descriptionBottom = titleLocation === "bottom" ? description : null;
-    let questionRootClass = this.question.cssMainRoot;
-    var comment =
-      this.question && this.question.hasComment
-        ? this.renderComment(cssClasses)
-        : null;
-    var errorsTop =
-      this.creator.questionErrorLocation() === "top"
-        ? this.renderErrors(cssClasses, "top")
-        : null;
-    var errorsBottom =
-      this.creator.questionErrorLocation() === "bottom"
-        ? this.renderErrors(cssClasses, "bottom")
-        : null;
-    let rootStyle: { [index: string]: any } = {};
-    if (this.question.renderWidth)
-      rootStyle["width"] = this.question.renderWidth;
-    if (!!this.question.paddingLeft)
-      rootStyle["paddingLeft"] = this.question.paddingLeft;
-    if (!!this.question.paddingRight)
-      rootStyle["paddingRight"] = this.question.paddingRight;
+  protected canRender(): boolean {
+    return (
+      super.canRender() &&
+      !!this.question &&
+      !!this.creator
+    );
+  }
 
+  protected renderQuestionContent(): JSX.Element {
+    let question = this.question;
+    var contentStyle = {
+      display: this.question.renderedIsExpanded ? "" : "none",
+    };
+    var cssClasses = question.cssClasses;
+    var questionRender = this.renderQuestion();
+    var errorsTop = this.question.showErrorOnTop
+      ? this.renderErrors(cssClasses, "top")
+      : null;
+    var errorsBottom = this.question.showErrorOnBottom
+      ? this.renderErrors(cssClasses, "bottom")
+      : null;
+    var comment =
+      question && question.hasComment ? this.renderComment(cssClasses) : null;
+    var descriptionUnderInput = question.hasDescriptionUnderInput
+      ? this.renderDescription()
+      : null;
     return (
       <div
-        ref="root"
-        id={this.question.id}
-        className={questionRootClass}
-        style={rootStyle}
+        className={question.cssContent || undefined}
+        style={contentStyle}
+        role="presentation"
       >
-        <div className={titleLeftClass}>
-          {titleTop}
-          {descriptionTop}
-          {titleLeft}
-          {descriptionLeft}
-        </div>
-
-        <div className={contentLeftClass}>
-          {errorsTop}
-          {questionRender}
-          {comment}
-          {errorsBottom}
-          {titleBottom}
-          {descriptionBottom}
-        </div>
+        {errorsTop}
+        {questionRender}
+        {comment}
+        {errorsBottom}
+        {descriptionUnderInput}
       </div>
     );
+  }
+  protected renderElement(): JSX.Element {
+    var question = this.question;
+    var cssClasses = question.cssClasses;
+    var header = this.renderHeader(question);
+    var headerTop = question.hasTitleOnLeftTop ? header : null;
+    var headerBottom = question.hasTitleOnBottom ? header : null;
+
+    const errorsAboveQuestion = this.question.showErrorsAboveQuestion
+      ? this.renderErrors(cssClasses, "")
+      : null;
+
+    const errorsBelowQuestion = this.question.showErrorsBelowQuestion
+      ? this.renderErrors(cssClasses, "")
+      : null;
+
+    let rootStyle = question.getRootStyle();
+    let questionContent = this.wrapQuestionContent(this.renderQuestionContent());
+
+    return (
+      <>
+        <div
+          ref={this.rootRef}
+          id={question.id}
+          className={question.getRootCss()}
+          style={rootStyle}
+          role={question.ariaRole}
+          aria-required={this.question.ariaRequired}
+          aria-invalid={this.question.ariaInvalid}
+          aria-labelledby={question.ariaLabelledBy}
+          aria-describedby={question.ariaDescribedBy}
+          aria-expanded={question.ariaExpanded === null ? undefined : question.ariaExpanded === "true"}
+        >
+          {errorsAboveQuestion}
+          {headerTop}
+          {questionContent}
+          {headerBottom}
+          {errorsBelowQuestion}
+        </div>
+      </>
+    );
+  }
+  protected wrapElement(element: JSX.Element): JSX.Element {
+    const survey: SurveyModel = this.question.survey as SurveyModel;
+    let wrapper: JSX.Element | null = null;
+    if (survey) {
+      wrapper = ReactSurveyElementsWrapper.wrapElement(survey, element, this.question);
+    }
+    return wrapper ?? element;
+  }
+  protected wrapQuestionContent(element: JSX.Element): JSX.Element {
+    const survey: SurveyModel = this.question.survey as SurveyModel;
+    let wrapper: JSX.Element | null = null;
+    if (survey) {
+      wrapper = ReactSurveyElementsWrapper.wrapQuestionContent(survey, element, this.question);
+    }
+    return wrapper ?? element;
   }
   protected renderQuestion(): JSX.Element {
     return SurveyQuestion.renderQuestionBody(this.creator, this.question);
   }
-  protected renderTitle(cssClasses: any): JSX.Element {
-    var titleText = SurveyElementBase.renderLocString(this.question.locTitle);
-    var number = null;
-    var delimiter = null;
-    var questionNumber = this.question["no"];
-    if (questionNumber) {
-      number = (
-        <span className={cssClasses.number} style={{ position: "static" }}>
-          {questionNumber}
-        </span>
-      );
-      delimiter = <span className={cssClasses.number}>.{"\u00A0"}</span>;
-    }
-    return (
-      <h5 className={cssClasses.title}>
-        {number}
-        {delimiter}
-        {titleText}
-      </h5>
-    );
-  }
-  protected renderDescription(cssClasses: any): JSX.Element {
-    if (this.question.locDescription.isEmpty) return null;
-    var descriptionText = SurveyElementBase.renderLocString(
-      this.question.locDescription
-    );
-    return <div className={cssClasses.description}>{descriptionText}</div>;
+  protected renderDescription(): JSX.Element {
+    return SurveyElementBase.renderQuestionDescription(this.question);
   }
   protected renderComment(cssClasses: any): JSX.Element {
-    // var commentText = SurveyElementBase.renderLocString(
-    //   this.question.locCommentText
-    // );
-    var commentText = this.question.commentText;
+    const commentText = SurveyElementBase.renderLocString(
+      this.question.locCommentText
+    );
     return (
-      <div className="form-group">
+      <div className={this.question.getCommentAreaCss()}>
         <div>{commentText}</div>
         <SurveyQuestionCommentItem
           question={this.question}
           cssClasses={cssClasses}
           otherCss={cssClasses.other}
+          isDisplayMode={this.question.isInputReadOnly}
         />
       </div>
     );
+  }
+  protected renderHeader(question: Question): JSX.Element {
+    return <SurveyElementHeader element={question}></SurveyElementHeader>;
   }
   protected renderErrors(cssClasses: any, location: string): JSX.Element {
     return (
@@ -191,154 +216,212 @@ export class SurveyQuestion extends SurveyElementBase {
         cssClasses={cssClasses}
         creator={this.creator}
         location={location}
+        id={this.question.id + "_errors"}
       />
     );
   }
 }
 
-ReactElementFactory.Instance.registerElement("question", props => {
+ReactElementFactory.Instance.registerElement("question", (props) => {
   return React.createElement(SurveyQuestion, props);
 });
 
 export class SurveyElementErrors extends ReactSurveyElement {
-  protected element: SurveyElement;
-  private creator: ISurveyCreator;
-  protected location: String;
-
   constructor(props: any) {
     super(props);
-    this.setElement(props.element);
     this.state = this.getState();
-    this.creator = props.creator;
-    this.location = props.location;
   }
-  componentWillReceiveProps(nextProps: any) {
-    this.setElement(nextProps.element);
-    this.setState(this.getState());
-    this.creator = nextProps.creator;
-    this.location = nextProps.location;
+  protected get id(): string {
+    return this.props.element.id + "_errors";
   }
-  private setElement(element: any) {
-    this.element = element instanceof SurveyElement ? element : null;
+  protected get element(): SurveyElement {
+    return this.props.element;
+  }
+  private get creator(): ISurveyCreator {
+    return this.props.creator;
+  }
+  protected get location(): string {
+    return this.props.location;
   }
   private getState(prevState: any = null) {
     return !prevState ? { error: 0 } : { error: prevState.error + 1 };
   }
-  render(): JSX.Element {
-    if (!this.element || this.element.errors.length == 0) return null;
-    var errors = [];
-    for (var i = 0; i < this.element.errors.length; i++) {
-      var key = "error" + i;
+  protected canRender(): boolean {
+    return !!this.element && this.element.hasVisibleErrors;
+  }
+  componentWillUnmount() {
+  }
+  protected renderElement(): JSX.Element {
+    const errors: Array<JSX.Element> = [];
+    for (let i = 0; i < this.element.errors.length; i++) {
+      const key: string = "error" + i;
       errors.push(
-        this.creator.renderError(key, this.element.errors[i], this.cssClasses)
+        this.creator.renderError(key, this.element.errors[i], this.cssClasses, this.element)
       );
-    }
-    var classes = this.cssClasses.error.root;
-
-    if (this.location === "top") {
-      classes += " " + this.cssClasses.error.locationTop;
-    } else if (this.location === "bottom") {
-      classes += " " + this.cssClasses.error.locationBottom;
     }
 
     return (
-      <div role="alert" className={classes}>
+      <div
+        role="alert"
+        aria-live="polite"
+        className={this.element.cssError}
+        id={this.id}
+      >
         {errors}
       </div>
     );
   }
 }
 
-export class SurveyQuestionAndErrorsCell extends ReactSurveyElement {
+export abstract class SurveyQuestionAndErrorsWrapped extends ReactSurveyElement {
   [index: string]: any;
-  private questionValue: Question;
-  protected creator: ISurveyCreator;
   constructor(props: any) {
     super(props);
-    this.setProperties(props);
   }
-  componentWillReceiveProps(nextProps: any) {
-    if (this.question) {
-      this.unMakeBaseElementReact(this.question);
-    }
-    super.componentWillReceiveProps(nextProps);
-    this.setProperties(nextProps);
-    if (this.question) {
-      this.makeBaseElementReact(this.question);
-    }
+  protected getStateElement(): Base {
+    return this.question;
   }
-  protected setProperties(nextProps: any) {
-    this.question = nextProps.question;
-    this.creator = nextProps.creator;
+  protected get question(): Question {
+    return this.getQuestion();
   }
-  protected get question() {
-    return this.questionValue;
+  protected get creator(): ISurveyCreator {
+    return this.props.creator;
   }
-  protected set question(val: Question) {
-    this.questionValue = val;
+  protected getQuestion(): Question {
+    return this.props.question;
   }
-  componentWillMount() {
-    this.makeBaseElementReact(this.question);
+  protected get itemCss(): string {
+    return this.props.itemCss;
   }
   componentDidMount() {
+    super.componentDidMount();
     this.doAfterRender();
   }
+  componentDidUpdate(prevProps: any, prevState: any) {
+    super.componentDidUpdate(prevProps, prevState);
+    this.doAfterRender();
+  }
+  protected doAfterRender() { }
+  protected canRender(): boolean {
+    return !!this.question;
+  }
+  protected renderContent(): JSX.Element {
+    var renderedQuestion = this.renderQuestion();
+    return (
+      <>
+        {renderedQuestion}
+      </>
+    );
+  }
+  protected abstract renderElement(): JSX.Element;
+  protected getShowErrors(): boolean {
+    return this.question.isVisible;
+  }
+  protected renderQuestion(): JSX.Element {
+    return SurveyQuestion.renderQuestionBody(this.creator, this.question);
+  }
+}
+
+export class SurveyQuestionAndErrorsCell extends SurveyQuestionAndErrorsWrapped {
+  [index: string]: any;
+  protected cellRef: React.RefObject<HTMLTableCellElement>;
+  constructor(props: any) {
+    super(props);
+    this.cellRef = React.createRef();
+  }
   componentWillUnmount() {
+    super.componentWillUnmount();
     if (this.question) {
-      this.unMakeBaseElementReact(this.question);
-      var el: any = this.refs["cell"];
+      var el = this.cellRef.current;
       if (!!el) {
         el.removeAttribute("data-rendered");
       }
     }
   }
-  componentDidUpdate(prevProps: any, prevState: any) {
-    this.doAfterRender();
-  }
-  protected doAfterRender() {}
-  protected getCellClass(): any {
-    return null;
-  }
-  render(): JSX.Element {
-    if (!this.question) return null;
-    var errorsTop = (
-      <SurveyElementErrors
-        element={this.question}
-        cssClasses={this.cssClasses}
-        creator={this.creator}
-        location={"top"}
-      />
+  protected renderCellContent(): JSX.Element {
+    return (
+      <div className={this.props.cell.cellQuestionWrapperClassName}>
+        {this.renderQuestion()}
+      </div>
     );
-    var errorsBottom = (
-      <SurveyElementErrors
-        element={this.question}
-        cssClasses={this.cssClasses}
-        creator={this.creator}
-        location={"bottom"}
-      />
-    );
-    var errorsTop =
-      this.creator.questionErrorLocation() === "top" ? errorsTop : null;
-    var errorsBottom =
-      this.creator.questionErrorLocation() === "bottom" ? errorsBottom : null;
-    var renderedCell = this.renderQuestion();
+  }
+  protected renderElement(): JSX.Element {
+    var style = this.getCellStyle();
+    const cell = this.props.cell;
+    const focusIn = () => { cell.focusIn(); };
     return (
       <td
-        ref="cell"
-        className={this.getCellClass()}
-        headers={
-          this.question.isVisible && !!this["cell"]
-            ? this["cell"].column.locTitle.renderedHtml
-            : ""
-        }
+        ref={this.cellRef}
+        className={this.itemCss}
+        colSpan={cell.colSpans}
+        title={cell.getTitle()}
+        style={style}
+        onFocus={focusIn}
       >
-        {errorsTop}
-        {renderedCell}
-        {errorsBottom}
+        {this.wrapCell(this.props.cell, this.renderCellContent())}
       </td>
     );
   }
-  private renderQuestion(): JSX.Element {
-    return SurveyQuestion.renderQuestionBody(this.creator, this.question);
+  protected getCellStyle(): any {
+    return null;
+  }
+  protected getHeaderText(): string {
+    return "";
+  }
+  protected wrapCell(
+    cell: QuestionMatrixDropdownRenderedCell,
+    element: JSX.Element
+  ): JSX.Element {
+    if (!cell) {
+      return element;
+    }
+    const survey: SurveyModel = this.question.survey as SurveyModel;
+    let wrapper: JSX.Element | null = null;
+    if (survey) {
+      wrapper = ReactSurveyElementsWrapper.wrapMatrixCell(survey, element, cell, this.props.reason);
+    }
+    return wrapper ?? element;
+  }
+}
+
+export class SurveyQuestionErrorCell extends React.Component<any, any> {
+  constructor(props: any) {
+    super(props);
+    this.state = {
+      changed: 0
+    };
+    if(this.question) {
+      this.registerCallback(this.question);
+    }
+  }
+  private get question(): Question {
+    return this.props.question;
+  }
+  private update() {
+    this.setState({ changed: this.state.changed + 1 });
+  }
+  private registerCallback(question: Question) {
+    question.registerFunctionOnPropertyValueChanged("errors", () => {
+      this.update();
+    }, "__reactSubscription");
+  }
+  private unRegisterCallback(question: Question) {
+    question.unRegisterFunctionOnPropertyValueChanged("errors", "__reactSubscription");
+  }
+  componentDidUpdate(prevProps: Readonly<any>): void {
+    if(prevProps.question && prevProps.question !== this.question) {
+      this.unRegisterCallback(prevProps.cell);
+    }
+    if(this.question) {
+      this.registerCallback(this.question);
+    }
+  }
+  componentWillUnmount(): void {
+    if(this.question) {
+      this.unRegisterCallback(this.question);
+    }
+  }
+  render(): JSX.Element {
+    return <SurveyElementErrors element={this.question} creator={this.props.creator} cssClasses={this.question.cssClasses}></SurveyElementErrors>;
   }
 }

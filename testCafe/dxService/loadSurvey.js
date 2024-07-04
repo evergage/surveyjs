@@ -1,13 +1,6 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `loadSurvey`;
+import { fixture, test } from "testcafe";
+import { frameworks, url, initSurvey, getSurveyResult } from "../helper";
+const title = "loadSurvey";
 
 const json = {
   surveyId: "5af48e08-a0a5-44a5-83f4-1c90e8e98de1"
@@ -20,16 +13,16 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`correct loading`, async t => {
+  test("correct loading", async t => {
     let surveyResult;
 
     await t
-      .click(`fieldset div:nth-child(2) label input`)
-      .click(`fieldset div:nth-child(4) label input`)
-      .click(`input[value="Complete"]`);
+      .click("fieldset div:nth-of-type(1) label input")
+      .click("fieldset div:nth-of-type(4) label input")
+      .click("input[value=\"Complete\"]");
 
     surveyResult = await getSurveyResult();
-    assert.deepEqual(surveyResult, {
+    await t.expect(surveyResult).eql({
       langs: ["Javascript", "VimL"]
     });
   });

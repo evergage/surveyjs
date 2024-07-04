@@ -1,16 +1,24 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
+import { frameworks, url, initSurvey, getSurveyResult } from "../helper";
+import { Selector, ClientFunction, fixture, test } from "testcafe";
+// eslint-disable-next-line no-undef
 const assert = require("assert");
-const title = `customValidators`;
+const title = "customValidators";
+
 const setupSurvey = ClientFunction(() => {
+  function __extends(thisClass, baseClass) {
+    for (var p in baseClass)
+      if (baseClass.hasOwnProperty(p)) thisClass[p] = baseClass[p];
+    function __() {
+      this.constructor = thisClass;
+    }
+    thisClass.prototype =
+      baseClass === null
+        ? Object.create(baseClass)
+        : ((__.prototype = baseClass.prototype), new __());
+  }
+
   var MyTextValidator = (function(_super) {
-    Survey.__extends(MyTextValidator, _super);
+    __extends(MyTextValidator, _super);
     function MyTextValidator() {
       _super.call(this);
     }
@@ -20,9 +28,9 @@ const setupSurvey = ClientFunction(() => {
     MyTextValidator.prototype.validate = function(value, name) {
       if (value.indexOf("survey") < 0) {
         //report an error
-        return new Survey.ValidatorResult(
+        return new window["Survey"].ValidatorResult(
           null,
-          new Survey.CustomError(this.getErrorText(name))
+          new window["Survey"].CustomError(this.getErrorText(name))
         );
       }
       //return Survey.ValidatorResult object if you want to correct the entered value
@@ -35,10 +43,10 @@ const setupSurvey = ClientFunction(() => {
       return "You text should contains 'survey' word.";
     };
     return MyTextValidator;
-  })(Survey.SurveyValidator);
-  Survey.MyTextValidator = MyTextValidator;
+  })(window["Survey"].SurveyValidator);
+  // window["Survey"].MyTextValidator = MyTextValidator;
   //add into survey Json metaData
-  Survey.Serializer.addClass(
+  window["Survey"].Serializer.addClass(
     "mytextvalidator",
     [],
     function() {
@@ -68,30 +76,28 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`check validation`, async t => {
-    const getError1Div = Selector(() => document.querySelectorAll("div"), {
-      text: "Please answer the question.",
+  test("check validation", async t => {
+    const getError1Div = Selector("div").withText("Response required.").with({
       visibilityCheck: true,
       timeout: 1000
     });
-    const getError2Div = Selector(() => document.querySelectorAll("div"), {
-      text: "You text should contains 'survey' word.",
+    const getError2Div = Selector("div").withText("You text should contains 'survey' word.").with({
       visibilityCheck: true,
       timeout: 1000
     });
     let surveyResult;
 
-    await t.click(`input[value="Complete"]`);
+    await t.click("input[value=\"Complete\"]");
 
     assert(await getError1Div());
 
-    await t.typeText(`textarea`, `wombat`).click(`input[value="Complete"]`);
+    await t.typeText("textarea", "wombat").click("input[value=\"Complete\"]");
 
     assert(await getError2Div());
 
-    await t.typeText(`textarea`, ` survey`).click(`input[value="Complete"]`);
+    await t.typeText("textarea", " survey").click("input[value=\"Complete\"]");
 
     surveyResult = await getSurveyResult();
-    assert.deepEqual(surveyResult, { memo: "wombat survey" });
+    await t.expect(surveyResult).eql({ memo: "wombat survey" });
   });
 });

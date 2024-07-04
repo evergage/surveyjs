@@ -1,13 +1,6 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `visibleTrigger`;
+import { fixture, test } from "testcafe";
+import { frameworks, url, initSurvey, getSurveyResult } from "../helper";
+const title = "visibleTrigger";
 
 const json = {
   triggers: [
@@ -182,19 +175,19 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`check visibility`, async t => {
+  test("check visibility", async t => {
     let surveyResult;
 
     await t
-      .click(`input[value="Hot hatch"]`)
-      .hover(`input[value="Honda Civic Type R"]`)
-      .hover(`input[value="Fiat 500 Abarth"]`)
-      .click(`input[value="Pony car"]`)
-      .click(`input[value="Dodge Challenger"]`)
-      .click(`input[value="Complete"]`);
+      .click("input[value=\"Hot hatch\"]")
+      .hover("input[value=\"Honda Civic Type R\"]")
+      .hover("input[value=\"Fiat 500 Abarth\"]")
+      .click("input[value=\"Pony car\"]")
+      .click("input[value=\"Dodge Challenger\"]")
+      .click("input[value=\"Complete\"]");
 
     surveyResult = await getSurveyResult();
-    assert.deepEqual(surveyResult, {
+    await t.expect(surveyResult).eql({
       type: "Pony car",
       "Pony car": "Dodge Challenger"
     });

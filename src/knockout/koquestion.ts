@@ -1,25 +1,27 @@
 import * as ko from "knockout";
-import { Question } from "../question";
-import { SurveyElement } from "../base";
-import { Helpers } from "../helpers";
+import { SurveyElement, Question, Helpers, doKey2ClickUp } from "survey-core";
 import { ImplementorBase } from "./kobase";
 
 export class QuestionImplementor extends ImplementorBase {
+  private disposedObjects: Array<string>;
+  private callBackFunctions: Array<string>;
   private koDummy: any;
-  koTemplateName: any;
   koElementType: any;
   private _koValue = ko.observableArray<any>();
   constructor(public question: Question) {
     super(question);
+    this.disposedObjects = [];
+    this.callBackFunctions = [];
     var isSynchronizing = false;
-    this._koValue.subscribe(newValue => {
+    this._koValue.subscribe((newValue) => {
       if (!isSynchronizing) {
-        this.question.value = newValue;
+        this.setKoValue(newValue);
       }
     });
+
     Object.defineProperty(this.question, "koValue", {
       get: () => {
-        if (!Helpers.isTwoValueEquals(this._koValue(), this.getKoValue())) {
+        if (!Helpers.isTwoValueEquals(this._koValue(), this.getKoValue(), false, true, false)) {
           try {
             isSynchronizing = true;
             this._koValue(this.getKoValue());
@@ -30,53 +32,55 @@ export class QuestionImplementor extends ImplementorBase {
         return this._koValue;
       },
       enumerable: true,
-      configurable: true
+      configurable: true,
     });
-    var self = this;
-    question.surveyLoadCallback = function() {
-      self.onSurveyLoad();
+    question.surveyLoadCallback = () => {
+      this.onSurveyLoad();
     };
-    this.koTemplateName = ko.pureComputed(function() {
-      return self.getTemplateName();
-    });
-    this.koElementType = ko.observable("survey-question");
-    (<any>this.question)["koElementType"] = this.koElementType;
-    (<any>this.question)["koTemplateName"] = this.koTemplateName;
-    (<any>this.question)["updateQuestion"] = function() {
-      self.updateQuestion();
-    };
-    (<any>this.question)["koCss"] = ko.pureComputed(function() {
-      return self.question.cssClasses;
-    });
-    (<any>this.question)["koRootClass"] = ko.pureComputed(function() {
-      return self.question.cssMainRoot;
-    });
-    question.registerFunctionOnPropertyValueChanged("visibleIndex", function() {
-      self.onVisibleIndexChanged();
-    });
+    this.setObservaleObj(
+      "koTemplateName",
+      ko.pureComputed(() => {
+        return this.getTemplateName();
+      })
+    );
+    this.setObservaleObj("koElementType", ko.observable("survey-question"));
     this.koDummy = ko.observable(0);
-    (<any>this.question)["koQuestionAfterRender"] = function(
-      el: any,
-      con: any
-    ) {
-      self.koQuestionAfterRender(el, con);
-    };
+    this.setCallbackFunc("koQuestionAfterRender", (el: any, con: any) => {
+      this.koQuestionAfterRender(el, con);
+    });
+    this.setCallbackFunc("koMouseDown", () => {
+      this.question.onMouseDown();
+      return true;
+    });
+  }
+  protected setObservaleObj(
+    name: string,
+    obj: any,
+    addToQuestion: boolean = true
+  ) {
+    this.disposedObjects.push(name);
+    if (addToQuestion) {
+      this.question[name] = obj;
+    }
+    return obj;
+  }
+  protected setCallbackFunc(name: string, func: any) {
+    this.callBackFunctions.push(name);
+    this.question[name] = func;
   }
   protected getKoValue() {
     return this.question.value;
   }
-  protected updateQuestion() {
-    this.updateKoDummy();
-  }
-  protected onVisibleIndexChanged() {
-    this.updateKoDummy();
+  protected setKoValue(val: any) {
+    if (this.question.isReadOnlyAttr) return;
+    this.question.value = val;
   }
   protected onSurveyLoad() {}
   protected getQuestionTemplate(): string {
     return this.question.getTemplate();
   }
   private getTemplateName(): string {
-    if (
+    if (!!this.question &&
       this.question.customWidget &&
       !this.question.customWidget.widgetJson.isDefaultRender
     )
@@ -89,20 +93,48 @@ export class QuestionImplementor extends ImplementorBase {
       : "";
   }
   protected updateKoDummy() {
+    if (this.question.isDisposed) return;
     this.koDummy(this.koDummy() + 1);
-    this.question.locTitle.onChanged();
+    this.question.locTitle.strChanged();
   }
   protected koQuestionAfterRender(elements: any, con: any) {
-    var el = SurveyElement.GetFirstNonTextElement(elements);
-    var tEl = elements[0];
-    if (tEl.nodeName === "#text") tEl.data = "";
-    tEl = elements[elements.length - 1];
-    if (tEl.nodeName === "#text") tEl.data = "";
-    if (el && this.question.customWidget) {
-      this.question.customWidget.afterRender(this.question, el);
-      ko.utils.domNodeDisposal.addDisposeCallback(el, () => {
-        this.question.customWidget.willUnmount(this.question, el);
-      });
+    setTimeout(() => {
+      !!ko.tasks && ko.tasks.runEarly();
+      var el = SurveyElement.GetFirstNonTextElement(elements, true);
+      if (!!el) {
+        this.question.afterRenderQuestionElement(el);
+        if (!!this.question && !!this.question.customWidget) {
+          this.question.customWidget.afterRender(this.question, el);
+        }
+        ko.utils.domNodeDisposal.addDisposeCallback(el, () => {
+          this.question.beforeDestroyQuestionElement(el);
+          if (!!this.question && !!this.question.customWidget) {
+            try {
+              this.question.customWidget.willUnmount(this.question, el);
+            } catch {
+              // eslint-disable-next-line no-console
+              console.warn("Custom widget will unmount failed");
+            }
+          }
+        });
+      }
+    }, 0);
+  }
+  public dispose(): void {
+    super.dispose();
+    for (let i = 0; i < this.disposedObjects.length; i++) {
+      const name = this.disposedObjects[i];
+      const obj = (<any>this)[name] || this.question[name];
+      if (!obj) continue;
+      if ((<any>this)[name]) (<any>this)[name] = undefined;
+      if (this.question[name]) this.question[name] = undefined;
+      if (obj["dispose"]) obj.dispose();
     }
+    this.disposedObjects = [];
+    for (var i = 0; i < this.callBackFunctions.length; i++) {
+      this.question[this.callBackFunctions[i]] = undefined;
+    }
+    this.callBackFunctions = [];
+    this.question.unregisterPropertyChangedHandlers(["visibleIndex"]);
   }
 }

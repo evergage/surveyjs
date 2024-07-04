@@ -1,21 +1,14 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `validateOnServer`;
+import { frameworks, url, initSurvey, getSurveyResult } from "../helper";
+import { Selector, ClientFunction, fixture, test } from "testcafe";
+const title = "validateOnServer";
 const setupSurvey = ClientFunction(() => {
-  window.survey.onServerValidateQuestions.add(function(survey, options) {
+  window["survey"].onServerValidateQuestions.add(function(survey, options) {
     //options.data contains the data for the current page.
     var countryName = options.data["country"];
     //If the question is empty then do nothing
     if (!countryName) options.complete();
     //call the ajax method
-    $.ajax({
+    window["$"].ajax({
       url: "http://127.0.0.1:8080/testCafe/countriesMock.json"
     }).then(function(data) {
       var found = false;
@@ -50,24 +43,21 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`check validation`, async t => {
-    const getErrorSpan = Selector(() => document.querySelectorAll("div"), {
-      text:
-        "The country name 'wombatland' is not in this list: http://services.groupkt.com/country/get/all",
-      visibilityCheck: true,
-      timeout: 1000
-    });
+  test("check validation", async (t) => {
+    const getErrorSpan = Selector("div")
+      .withText("The country name 'wombatland' is not in this list: http://services.groupkt.com/country/get/all")
+      .with({ timeout: 1000, visibilityCheck: true });
     let surveyResult;
 
     await t
-      .typeText(`input[type="text"]`, `wombatland`)
-      .click(`input[value="Complete"]`)
+      .typeText("input[type=\"text\"]", "wombatland")
+      .click("input[value=\"Complete\"]")
       .hover(getErrorSpan)
-      .typeText(`input[type="text"]`, `Romania`, { replace: true })
-      .click(`input[value="Complete"]`);
+      .typeText("input[type=\"text\"]", "Romania", { replace: true })
+      .click("input[value=\"Complete\"]");
 
     surveyResult = await getSurveyResult();
-    assert.deepEqual(surveyResult, {
+    await t.expect(surveyResult).eql({
       country: "Romania"
     });
   });

@@ -1,37 +1,25 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `localization`;
+import { frameworks, url, initSurvey, getListItemByText } from "../helper";
+import { ClientFunction, fixture, test, Selector } from "testcafe";
+const title = "localization";
 
 const setRu = ClientFunction(() => {
-  survey.locale = "ru";
-  survey.render();
+  window["survey"].locale = "ru";
 });
 
 const setEn = ClientFunction(() => {
-  survey.locale = "en";
-  survey.render();
+  window["survey"].locale = "en";
 });
 
 const setDe = ClientFunction(() => {
-  survey.locale = "de";
-  survey.render();
+  window["survey"].locale = "de";
 });
 
 const setFi = ClientFunction(() => {
-  survey.locale = "fi";
-  survey.render();
+  window["survey"].locale = "fi";
 });
 
 const setFr = ClientFunction(() => {
-  survey.locale = "fr";
-  survey.render();
+  window["survey"].locale = "fr";
 });
 
 const json = {
@@ -47,6 +35,14 @@ const json = {
           hasOther: true,
           isRequired: true,
           choices: ["Windows", "Linux", "Macintosh OSX"]
+        },
+        {
+          type: "dropdown",
+          name: "q1",
+          choices: [
+            { value: 1, text: { default: "en1", de: "de1", fr: "fr1" } },
+            { value: 2, text: { default: "en2", de: "de2", fr: "fr2" } }
+          ]
         }
       ]
     },
@@ -111,20 +107,48 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`next`, async t => {
+  test("next", async t => {
     await setRu();
-    await t.hover(`input[value=Далее]`);
+    await t.hover("input[value=Далее]");
 
     await setEn();
-    await t.hover(`input[value=Next]`);
+    await t.hover("input[value=Next]");
 
     await setDe();
-    await t.hover(`input[value=Weiter]`);
+    await t.hover("input[value=Weiter]");
 
     await setFi();
-    await t.hover(`input[value=Seuraava]`);
+    await t.hover("input[value=Seuraava]");
 
     await setFr();
-    await t.hover(`input[value=Suivant]`);
+    await t.hover("input[value=Suivant]");
+  });
+
+  test("check dropdown localization", async t => {
+    const questionDropdownSelect = Selector(".sv_q_dropdown_control");
+    await t
+      .click(questionDropdownSelect)
+      .expect(getListItemByText("en1").visible).ok()
+      .expect(getListItemByText("en2").visible).ok()
+      .click(getListItemByText("en1"));
+
+    await setDe();
+    await t
+      .click(questionDropdownSelect)
+      .expect(getListItemByText("de1").visible).ok()
+      .expect(getListItemByText("de2").visible).ok()
+      .click(getListItemByText("de2"));
+    await setFr();
+    await t
+      .click(questionDropdownSelect)
+      .expect(getListItemByText("fr1").visible).ok()
+      .expect(getListItemByText("fr2").visible).ok()
+      .click(getListItemByText("fr1"));
+    await setEn();
+    await t
+      .click(questionDropdownSelect)
+      .expect(getListItemByText("en1").visible).ok()
+      .expect(getListItemByText("en2").visible).ok()
+      .click(getListItemByText("en2"));
   });
 });

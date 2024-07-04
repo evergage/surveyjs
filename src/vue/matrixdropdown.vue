@@ -1,15 +1,13 @@
 <template>
-    <div :style="{overflowX: question.horizontalScroll? 'scroll': ''}">
-        <survey-matrixtable :question="question" />
-    </div>
+    <survey-matrixtable :question="question" />
 </template>
 
 <script lang="ts">
 import Vue from "vue";
 import { Component, Prop } from "vue-property-decorator";
 import { default as QuestionVue } from "./question";
-import { QuestionMatrixDropdownModel } from "../question_matrixdropdown";
-import { MatrixDropdownRowModelBase } from "../question_matrixdropdownbase";
+import { QuestionMatrixDropdownModel } from "survey-core";
+import { MatrixDropdownRowModelBase } from "survey-core";
 
 @Component
 export class MatrixDropdown extends QuestionVue<QuestionMatrixDropdownModel> {}

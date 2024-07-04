@@ -1,12 +1,14 @@
 import { Question, IConditionObject } from "./question";
 import { Serializer } from "./jsonobject";
-import { SurveyError } from "./base";
+import { SurveyError } from "./survey-error";
 
 /**
- * A Model for non value question. This question doesn't add any new functionality. It hides some properties, including the value.
+ * A base class for question types that cannot have a value ([Html](https://surveyjs.io/form-library/documentation/questionhtmlmodel), [Image](https://surveyjs.io/form-library/documentation/questionimagemodel)).
+ *
+ * This class does not implement new functionality&mdash;it only redefines default values of certain properties inherited from the [`Question`](https://surveyjs.io/form-library/documentation/question) class.
  */
 export class QuestionNonValue extends Question {
-  constructor(public name: string) {
+  constructor(name: string) {
     super(name);
   }
   public getType(): string {
@@ -24,18 +26,26 @@ export class QuestionNonValue extends Question {
   public get hasComment(): boolean {
     return false;
   }
+  public hasErrors(fireCallback: boolean = true, rec: any = null): boolean {
+    return false;
+  }
   public getAllErrors(): Array<SurveyError> {
     return [];
   }
-  public supportGoNextPageAutomatic() {
+  public supportGoNextPageAutomatic(): boolean {
     return false;
   }
-  public addConditionNames(names: Array<string>) {}
   public addConditionObjectsByContext(
     objects: Array<IConditionObject>,
     context: any
-  ) {}
+  ) { }
   public getConditionJson(operator: string = null, path: string = null): any {
+    return null;
+  }
+  public get ariaRole(): string {
+    return null;
+  }
+  public get ariaRequired(): any {
     return null;
   }
 }
@@ -48,14 +58,17 @@ Serializer.addClass(
     { name: "enableIf", visible: false },
     { name: "defaultValue", visible: false },
     { name: "correctAnswer", visible: false },
-    { name: "isRequired", visible: false },
+    { name: "clearIfInvisible", visible: false },
+    { name: "isRequired", visible: false, isSerializable: false },
     { name: "requiredErrorText", visible: false },
     { name: "readOnly", visible: false },
+    { name: "requiredIf", visible: false },
     { name: "validators", visible: false },
     { name: "titleLocation", visible: false },
-    { name: "useDisplayValuesInTitle", visible: false }
+    { name: "showCommentArea", visible: false },
+    { name: "useDisplayValuesInDynamicTexts", alternativeName: "useDisplayValuesInTitle", visible: false },
   ],
-  function() {
+  function () {
     return new QuestionNonValue("");
   },
   "question"

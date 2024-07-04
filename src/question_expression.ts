@@ -6,26 +6,34 @@ import { LocalizableString } from "./localizablestring";
 import { ExpressionRunner } from "./conditions";
 
 /**
- * A Model for expression question. It is a read-only question. It calculates value based on epxression property.
+ * A class that describes the Expression question type. It is a read-only question type that calculates a value based on a specified expression.
+ *
+ * [View Demo](https://surveyjs.io/form-library/examples/questiontype-expression/ (linkStyle))
  */
 export class QuestionExpressionModel extends Question {
   private expressionIsRunning: boolean;
   private expressionRunner: ExpressionRunner;
-  constructor(public name: string) {
+  constructor(name: string) {
     super(name);
     this.createLocalizableString("format", this);
-    var self = this;
-    this.registerFunctionOnPropertyValueChanged("expression", function() {
-      if (self.expressionRunner) {
-        self.expressionRunner = new ExpressionRunner(self.expression);
+    this.registerPropertyChangedHandlers(["expression"], () => {
+      if (this.expressionRunner) {
+        this.expressionRunner = this.createRunner();
       }
+    });
+    this.registerPropertyChangedHandlers(["format", "currency", "displayStyle"], () => {
+      this.updateFormatedValue();
     });
   }
   public getType(): string {
     return "expression";
   }
+  public get hasInput(): boolean {
+    return false;
+  }
   /**
-   * Use this property to display the value in your own format. Make sure you have "{0}" substring in your string, to display the actual value.
+   * A string that formats a question value. Use `{0}` to reference the question value in the format string.
+   * @see displayStyle
    */
   public get format(): string {
     return this.getLocalizableStringText("format", "");
@@ -37,8 +45,9 @@ export class QuestionExpressionModel extends Question {
     return this.getLocalizableString("format");
   }
   /**
-   * The Expression that used to calculate the question value. You may use standard operators like +, -, * and /, squares (). Here is the example of accessing the question value {questionname}.
-   * <br/>Example: "({quantity} * {price}) * (100 - {discount}) / 100"
+   * An expression used to calculate the question value.
+   *
+   * Refer to the following help topic for more information: [Expressions](https://surveyjs.io/form-library/documentation/design-survey-conditional-logic#expressions).
    */
   public get expression(): string {
     return this.getPropertyValue("expression", "");
@@ -54,82 +63,173 @@ export class QuestionExpressionModel extends Question {
   }
   public runCondition(values: HashTable<any>, properties: HashTable<any>) {
     super.runCondition(values, properties);
-    if (!this.expression || this.expressionIsRunning) return;
+    if (
+      !this.expression ||
+      this.expressionIsRunning ||
+      (!this.runIfReadOnly && this.isReadOnly)
+    )
+      return;
     this.locCalculation();
-    if (!this.expressionRunner)
-      this.expressionRunner = new ExpressionRunner(this.expression);
-    var newValue = this.expressionRunner.run(values, properties);
-    if (!Helpers.isTwoValueEquals(newValue, this.value)) {
-      this.value = newValue;
+    if (!this.expressionRunner) {
+      this.expressionRunner = this.createRunner();
     }
-    this.unlocCalculation();
+    this.expressionRunner.run(values, properties);
+  }
+  protected canCollectErrors(): boolean {
+    return true;
+  }
+  public hasRequiredError(): boolean {
+    return false;
+  }
+  private createRunner(): ExpressionRunner {
+    const res = this.createExpressionRunner(this.expression);
+    res.onRunComplete = (newValue) => {
+      this.value = this.roundValue(newValue);
+      this.unlocCalculation();
+    };
+    return res;
   }
   /**
-   * The maximum number of fraction digits to use if displayStyle is not "none". Possible values are from 0 to 20. The default value is -1 and it means that this property is not used.
+   * The maximum number of fraction digits. Applies only if the `displayStyle` property is not `"none"`. Accepts values in the range from -1 to 20, where -1 disables the property.
+   *
+   * Default value: -1
+   * @see displayStyle
+   * @see minimumFractionDigits
+   * @see precision
    */
   public get maximumFractionDigits(): number {
-    return this.getPropertyValue("maximumFractionDigits", -1);
+    return this.getPropertyValue("maximumFractionDigits");
   }
   public set maximumFractionDigits(val: number) {
     if (val < -1 || val > 20) return;
     this.setPropertyValue("maximumFractionDigits", val);
   }
   /**
-   * The minimum number of fraction digits to use if displayStyle is not "none". Possible values are from 0 to 20. The default value is -1 and it means that this property is not used.
+   * The minimum number of fraction digits. Applies only if the `displayStyle` property is not `"none"`. Accepts values in the range from -1 to 20, where -1 disables the property.
+   *
+   * Default value: -1
+   * @see displayStyle
+   * @see maximumFractionDigits
    */
   public get minimumFractionDigits(): number {
-    return this.getPropertyValue("minimumFractionDigits", -1);
+    return this.getPropertyValue("minimumFractionDigits");
   }
   public set minimumFractionDigits(val: number) {
     if (val < -1 || val > 20) return;
     this.setPropertyValue("minimumFractionDigits", val);
   }
-  protected getDisplayValueCore(keysAsText: boolean): any {
-    var val = this.isValueEmpty(this.value) ? this.defaultValue : this.value;
-    if (this.isValueEmpty(val)) return "";
-    var str = this.getValueAsStr(val);
-    if (!this.format) return str;
-    return (<any>this.format)["format"](str);
+  private runIfReadOnlyValue: boolean;
+  public get runIfReadOnly(): boolean {
+    return this.runIfReadOnlyValue === true;
+  }
+  public set runIfReadOnly(val: boolean) {
+    this.runIfReadOnlyValue = val;
+  }
+  public get formatedValue(): string {
+    return this.getPropertyValue("formatedValue", "");
+  }
+  protected updateFormatedValue(): void {
+    this.setPropertyValue("formatedValue", this.getDisplayValueCore(false, this.value));
+  }
+  protected onValueChanged() {
+    this.updateFormatedValue();
+  }
+  updateValueFromSurvey(newValue: any, clearData: boolean): void {
+    super.updateValueFromSurvey(newValue, clearData);
+    this.updateFormatedValue();
+  }
+  protected getDisplayValueCore(keysAsText: boolean, value: any): any {
+    var val = value === undefined || value === null ? this.defaultValue : value;
+    var res = "";
+    if (!this.isValueEmpty(val)) {
+      var str = this.getValueAsStr(val);
+      res = !this.format ? str : (<any>this.format)["format"](str);
+    }
+    if (!!this.survey) {
+      res = this.survey.getExpressionDisplayValue(this, val, res);
+    }
+    return res;
   }
   /**
-   * You may set this property to "decimal", "currency" or "percent". If you set it to "currency", you may use the currency property to display the value in currency different from USD.
+   * Specifies a display style for the question value.
+   *
+   * Possible values:
+   *
+   * - `"decimal"`
+   * - `"currency"`
+   * - `"percent"`
+   * - `"date"`
+   * - `"none"` (default)
+   *
+   * If you use the `"currency"` display style, you can also set the `currency` property to specify a currency other than USD.
    * @see currency
+   * @see minimumFractionDigits
+   * @see maximumFractionDigits
+   * @see format
    */
   public get displayStyle(): string {
-    return this.getPropertyValue("displayStyle", "none");
+    return this.getPropertyValue("displayStyle");
   }
   public set displayStyle(val: string) {
     this.setPropertyValue("displayStyle", val);
   }
   /**
-   * Use it to display the value in the currency differen from USD. The displayStype should be set to "currency".
+   * A three-letter currency code. Applies only if the `displayStyle` property is set to `"currency"`.
+   *
+   * Default value: "USD".
    * @see displayStyle
+   * @see minimumFractionDigits
+   * @see maximumFractionDigits
+   * @see format
    */
   public get currency(): string {
-    return this.getPropertyValue("currency", "USD");
+    return this.getPropertyValue("currency");
   }
   public set currency(val: string) {
     if (getCurrecyCodes().indexOf(val) < 0) return;
     this.setPropertyValue("currency", val);
   }
+  /**
+   * Specifies whether to use grouping separators in number representation. Separators depend on the selected [locale](https://surveyjs.io/form-library/documentation/surveymodel#locale).
+   *
+   * Default value: `true`
+   */
   public get useGrouping(): boolean {
-    return this.getPropertyValue("useGrouping", true);
+    return this.getPropertyValue("useGrouping");
   }
   public set useGrouping(val: boolean) {
     this.setPropertyValue("useGrouping", val);
   }
+  /**
+   * Specifies how many decimal digits to keep in the expression value.
+   *
+   * Default value: -1 (unlimited)
+   * @see maximumFractionDigits
+   */
+  public get precision(): number {
+    return this.getPropertyValue("precision");
+  }
+  public set precision(val: number) {
+    this.setPropertyValue("precision", val);
+  }
+  private roundValue(val: any): any {
+    if(val === Infinity) return undefined;
+    if(this.precision < 0) return val;
+    if(!Helpers.isNumber(val)) return val;
+    return parseFloat(val.toFixed(this.precision));
+  }
   protected getValueAsStr(val: any): string {
-    if (
-      this.displayStyle != "none" &&
-      !isNaN(parseFloat(val)) &&
-      isFinite(val)
-    ) {
+    if (this.displayStyle == "date") {
+      var d = new Date(val);
+      if (!!d && !!d.toLocaleDateString) return d.toLocaleDateString();
+    }
+    if (this.displayStyle != "none" && Helpers.isNumber(val)) {
       var locale = this.getLocale();
       if (!locale) locale = "en";
       var options = {
         style: this.displayStyle,
         currency: this.currency,
-        useGrouping: this.useGrouping
+        useGrouping: this.useGrouping,
       };
       if (this.maximumFractionDigits > -1) {
         (<any>options)["maximumFractionDigits"] = this.maximumFractionDigits;
@@ -321,9 +421,8 @@ export function getCurrecyCodes(): Array<string> {
     "XXX",
     "YER",
     "ZAR",
-    "ZAR",
     "ZMW",
-    "ZWL"
+    "ZWL",
   ];
 }
 
@@ -335,30 +434,36 @@ Serializer.addClass(
     {
       name: "displayStyle",
       default: "none",
-      choices: ["none", "decimal", "currency", "percent"]
+      choices: ["none", "decimal", "currency", "percent", "date"],
     },
     {
       name: "currency",
       choices: () => {
         return getCurrecyCodes();
       },
-      default: "USD"
+      default: "USD",
+      visibleIf: (obj: QuestionExpressionModel): boolean => {
+        return obj.displayStyle === "currency";
+      }
     },
     { name: "maximumFractionDigits:number", default: -1 },
     { name: "minimumFractionDigits:number", default: -1 },
     { name: "useGrouping:boolean", default: true },
-    { name: "commentText", visible: false },
+    { name: "precision:number", default: -1, category: "data" },
     { name: "enableIf", visible: false },
     { name: "isRequired", visible: false },
     { name: "readOnly", visible: false },
     { name: "requiredErrorText", visible: false },
-    { name: "validators", visible: false }
+    { name: "defaultValueExpression", visible: false },
+    { name: "defaultValue", visible: false },
+    { name: "correctAnswer", visible: false },
+    { name: "requiredIf", visible: false }
   ],
   function() {
     return new QuestionExpressionModel("");
   },
   "question"
 );
-QuestionFactory.Instance.registerQuestion("expression", name => {
+QuestionFactory.Instance.registerQuestion("expression", (name) => {
   return new QuestionExpressionModel(name);
 });

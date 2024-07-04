@@ -1,16 +1,12 @@
 import * as ko from "knockout";
 import { QuestionImplementor } from "./koquestion";
-import { Question } from "../question";
-import {
-  QuestionSelectBase,
-  QuestionCheckboxBase
-} from "../question_baseselect";
+import { Question } from "survey-core";
+import { QuestionSelectBase } from "survey-core";
 
 export class QuestionSelectBaseImplementor extends QuestionImplementor {
   protected onCreated() {}
   constructor(question: Question) {
     super(question);
-
     this.onCreated();
   }
   protected get isOtherSelected(): boolean {
@@ -20,7 +16,7 @@ export class QuestionSelectBaseImplementor extends QuestionImplementor {
 export class QuestionCheckboxBaseImplementor extends QuestionSelectBaseImplementor {
   constructor(question: Question) {
     super(question);
-    (<any>this.question)["koAfterRender"] = this.koAfterRender;
+    this.setCallbackFunc("koAfterRender", this.koAfterRender);
   }
   private koAfterRender(el: any, con: any) {
     var tEl = el[0];

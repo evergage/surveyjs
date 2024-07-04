@@ -1,4 +1,4 @@
-import { JsonObject, Serializer } from "../../src/jsonobject";
+import { JsonObject } from "../../src/jsonobject";
 import { QuestionRating } from "../../src/knockout/koquestion_rating";
 import { Survey } from "../../src/knockout/kosurvey";
 import { Page } from "../../src/knockout/kopage";
@@ -38,11 +38,11 @@ QUnit.test("Deserialize rate widget, custom rateValues", function(assert) {
             {
               type: "rating",
               name: "question7",
-              rateValues: [{ value: "1", text: "A" }, "B", "C", "D"]
-            }
-          ]
-        }
-      ]
+              rateValues: [{ value: "1", text: "A" }, "B", "C", "D"],
+            },
+          ],
+        },
+      ],
     },
     survey
   );
@@ -57,7 +57,12 @@ QUnit.test("Deserialize rate widget, custom rateValues", function(assert) {
 QUnit.test("Create rows", function(assert) {
   var survey = new Survey();
   new JsonObject().toObject(
-    { questions: [{ type: "text", name: "q1" }, { type: "text", name: "q2" }] },
+    {
+      questions: [
+        { type: "text", name: "q1" },
+        { type: "text", name: "q2" },
+      ],
+    },
     survey
   );
   var page = <Page>survey.currentPage;
@@ -102,9 +107,9 @@ QUnit.test(
           type: "checkbox",
           name: "q1",
           hasNone: true,
-          choices: [1, 2, 3, 4, 5]
-        }
-      ]
+          choices: [1, 2, 3, 4, 5],
+        },
+      ],
     };
     var survey = new Survey(json);
     var q = <QuestionCheckbox>survey.getQuestionByName("q1");
@@ -131,9 +136,9 @@ QUnit.test(
           type: "checkbox",
           name: "q1",
           hasNone: true,
-          choices: [1, 2, 3, 4, 5]
-        }
-      ]
+          choices: [1, 2, 3, 4, 5],
+        },
+      ],
     };
     var survey = new Survey(json);
     var q = <QuestionCheckbox>survey.getQuestionByName("q1");
@@ -149,5 +154,95 @@ QUnit.test(
     q.value = [1, "none"];
     assert.deepEqual(q.value, ["none"], "we keep only none");
     assert.deepEqual(q.koValue(), ["none"], "ko values keeps none");
+  }
+);
+QUnit.test("checkbox and valuePropertyName", (assert) => {
+  const survey = new Survey({
+    elements: [
+      {
+        type: "checkbox",
+        name: "q1",
+        choices: ["apple", "banana", "orange"],
+      }
+    ]
+  });
+  const q = <QuestionCheckbox>survey.getQuestionByName("q1");
+  q.valuePropertyName = "fruit";
+  q.koValue(["apple"]);
+  assert.deepEqual(q.value, [{ fruit: "apple" }], "#1");
+  assert.deepEqual(q.koValue(), ["apple"], "#2");
+  assert.equal(q.isItemSelected(q.choices[0]), true, "#2.1");
+  assert.equal(q.isItemSelected(q.choices[1]), false, "#2.2");
+  assert.equal(q.isItemSelected(q.choices[2]), false, "#2.3");
+  q.value = [{ fruit: "apple" }, { fruit: "orange" }];
+  assert.deepEqual(q.koValue(), ["apple", "orange"], "#3");
+  assert.deepEqual(survey.data, { q1: [{ fruit: "apple" }, { fruit: "orange" }] }, "convert to data correctly, #4");
+  assert.equal(q.isItemSelected(q.choices[0]), true, "#3.1");
+  assert.equal(q.isItemSelected(q.choices[1]), false, "#3.2");
+  assert.equal(q.isItemSelected(q.choices[2]), true, "#3.3");
+  survey.doComplete();
+  assert.deepEqual(survey.data, { q1: [{ fruit: "apple" }, { fruit: "orange" }] }, "survey.data is correct on complete, #5");
+});
+QUnit.test(
+  "Do not change currentPage on calculating expressions, Bug T3455",
+  function(assert) {
+    var survey = new Survey({
+      pages: [
+        {
+          name: "page1",
+          elements: [
+            {
+              type: "html",
+              name: "question5",
+              html: "Page 1",
+            },
+            {
+              type: "radiogroup",
+              name: "question1",
+              title: "What do you want to do?",
+              choices: [
+                {
+                  value: "item1",
+                  text: "Goto Page 3",
+                },
+                {
+                  value: "item2",
+                  text: "Goto Page 2 (Hide Page 1)",
+                },
+              ],
+            },
+          ],
+          visibleIf: "{question1} <> 'item2'",
+        },
+        {
+          name: "page2",
+          elements: [
+            {
+              type: "html",
+              name: "question2",
+              html: "Page 2",
+            },
+          ],
+          visibleIf: "{question1} = 'item2'",
+        },
+        {
+          name: "page3",
+          elements: [
+            {
+              type: "html",
+              name: "question3",
+              html: "Page 3",
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(survey.currentPage.name, "page1", "The first page is showing");
+    survey.getQuestionByName("question1").value = "item2";
+    assert.equal(
+      survey.currentPage.name,
+      "page2",
+      "Show the second page and make it current"
+    );
   }
 );

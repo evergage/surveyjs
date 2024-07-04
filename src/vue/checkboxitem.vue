@@ -1,59 +1,42 @@
 <template>
-    <div>
-      <label :class="question.cssClasses.label">
-        <input
-          v-if="item == question.selectAllItem"
-          type="checkbox"
-          :name="question.name"
-          :value="isAllSelected"
-          v-model="isAllSelected"
-          :id="question.inputId + '_' + index"
-          :disabled="question.isReadOnly"
-          v-bind:aria-label="item.locText.renderedHtml"
-          :class="question.cssClasses.itemControl"
-        >
-        <input
-          v-if="item != question.selectAllItem"
-          type="checkbox"
-          :name="question.name"
-          :value="item.value"
-          v-model="question.renderedValue"
-          :id="question.inputId + '_' + index"
-          :disabled="question.isReadOnly || !item.isEnabled"
-          v-bind:aria-label="item.locText.renderedHtml"
-          :class="question.cssClasses.itemControl"
-        >
-        <span :class="question.cssClasses.materialDecorator">
-          <span class="check"></span>
-        </span>
-        <span :class="question.cssClasses.controlLabel">
-          <survey-string :locString="item.locText"/>
-        </span>
-      </label>
-      <survey-other-choice
-          v-show="question.hasOther && question.renderedValue && question.isOtherSelected"
-          v-if="item.value == question.otherItem.value"
-          :question="question"
-        />
-    </div>
+  <div role="presentation" :class="question.getItemClass(item)">
+    <label :class="question.getLabelClass(item)">
+      <input
+        type="checkbox" :name="question.name+item.id"
+        :checked="question.isItemSelected(item)"
+        @input="
+          (e) => {
+            question.clickItemHandler(item, e.target.checked);
+          }
+        "
+        :value="item.value" :required="question.hasRequiredError()"
+        :id="question.getItemId(item)" :disabled="!question.getItemEnabled(item)" :readonly="question.isReadOnlyAttr"
+        :class="question.cssClasses.itemControl" /><span
+        v-if="question.cssClasses.materialDecorator" :class="question.cssClasses.materialDecorator">
+        <svg v-if="question.itemSvgIcon" :class="question.cssClasses.itemDecorator">
+          <use :xlink:href="question.itemSvgIcon"></use>
+        </svg>
+      </span><span v-if="!hideLabel" :class="question.cssClasses.controlLabel">
+        <survey-string :locString="item.locText" />
+      </span>
+    </label>
+  </div>
 </template>
 
 <script lang="ts">
+import { ItemValue, Base } from "survey-core";
 import Vue from "vue";
 import { Component, Prop } from "vue-property-decorator";
+import { BaseVue } from "./base";
 
 @Component
-export class CheckboxItem extends Vue {
-  @Prop question: any;
-  @Prop item: any;
-  @Prop index: any;
-  get isAllSelected() {
-    return this.question.isAllSelected;
+export class CheckboxItem extends BaseVue {
+  @Prop() question: any;
+  @Prop() item: ItemValue;
+  @Prop() hideLabel: boolean;
+  protected getModel(): Base {
+    return this.item;
   }
-  set isAllSelected(val: boolean) {
-    this.question.isAllSelected = val;
-  }
-
 }
 Vue.component("survey-checkbox-item", CheckboxItem);
 export default CheckboxItem;

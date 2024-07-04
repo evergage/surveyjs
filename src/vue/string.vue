@@ -1,21 +1,17 @@
 <template>
-    <span style="position: static;">
-        <span style="position: static;" v-if="locString.hasHtml" v-html="locString.renderedHtml"></span>
-        <span style="position: static;" v-else>{{locString.renderedHtml}}</span>
-    </span>
+  <component :is="locString.renderAs" :locString="locString.renderAsData" />
 </template>
 
 <script lang="ts">
-    import Vue from "vue"
-    import {Component, Prop} from 'vue-property-decorator'
-    import {LocalizableString} from "../localizablestring";
+import Vue from "vue";
+import { Component, Prop } from "vue-property-decorator";
+import { LocalizableString } from "survey-core";
 
-    @Component
-    export class SurveyString extends Vue {
-        @Prop
-        locString: LocalizableString
-    }
+@Component
+export class SurveyString extends Vue {
+  @Prop() locString: LocalizableString;
+}
 
-    Vue.component("survey-string", SurveyString)
-    export default SurveyString;
+Vue.component("survey-string", SurveyString);
+export default SurveyString;
 </script>

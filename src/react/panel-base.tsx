@@ -1,56 +1,68 @@
 import * as React from "react";
 import { ISurveyCreator } from "./reactquestion";
-import { SurveyModel } from "../survey";
-import { QuestionRowModel, PanelModel, PanelModelBase } from "../panel";
-import { SurveyElementBase } from "./reactquestionelement";
+import { Base, SurveyModel, QuestionRowModel, PanelModel, PanelModelBase } from "survey-core";
+import { SurveyElementBase } from "./reactquestion_element";
 import { SurveyRow } from "./row";
 
-export class SurveyPanelBase extends SurveyElementBase {
-  private panelValue: PanelModelBase;
-  protected survey: SurveyModel;
-  protected creator: ISurveyCreator;
-  protected css: any;
+export class SurveyPanelBase extends SurveyElementBase<any, any> {
+  protected rootRef: React.RefObject<HTMLDivElement>;
   constructor(props: any) {
     super(props);
-    this.survey = props.survey;
-    this.creator = props.creator;
-    this.css = props.css;
+    this.rootRef = React.createRef();
   }
-  componentWillReceiveProps(nextProps: any) {
-    this.survey = nextProps.survey;
-    this.creator = nextProps.creator;
-    this.css = nextProps.css;
+  protected getStateElement(): Base {
+    return this.panelBase;
+  }
+  protected canUsePropInState(key: string): boolean {
+    return key !== "elements" && super.canUsePropInState(key);
+  }
+  protected get survey(): SurveyModel | null {
+    return this.getSurvey();
+  }
+  protected get creator(): ISurveyCreator {
+    return this.props.creator;
+  }
+  protected get css(): any {
+    return this.getCss();
   }
   public get panelBase(): PanelModelBase {
-    return this.panelValue;
+    return this.getPanelBase();
   }
-  public set panelBase(val: PanelModelBase) {
-    this.panelValue = val;
+  protected getPanelBase(): PanelModelBase {
+    return this.props.element || this.props.question;
   }
-  componentWillMount() {
-    this.makeBaseElementReact(this.panelBase);
+  protected getSurvey(): SurveyModel | null {
+    return (
+      this.props.survey || (!!this.panelBase ? this.panelBase.survey : null)
+    );
+  }
+  protected getCss(): any {
+    return this.props.css;
   }
   componentDidMount() {
+    super.componentDidMount();
     this.doAfterRender();
   }
   componentWillUnmount() {
-    this.unMakeBaseElementReact(this.panelBase);
-    var el: any = this.refs["root"];
+    super.componentWillUnmount();
+    var el = this.rootRef.current;
     if (!!el) {
       el.removeAttribute("data-rendered");
     }
   }
   componentDidUpdate(prevProps: any, prevState: any) {
+    super.componentDidUpdate(prevProps, prevState);
     if (
       !!prevProps.page &&
       !!this.survey &&
-      prevProps.page.name === this.survey.currentPage.name
+      !!this.survey.activePage &&
+      prevProps.page.id === this.survey.activePage.id
     )
       return;
     this.doAfterRender();
   }
   private doAfterRender() {
-    var el: any = this.refs["root"];
+    var el = this.rootRef.current;
     if (el && this.survey) {
       if (this.panelBase.isPanel) {
         this.survey.afterRenderPanel(this.panelBase as PanelModel, el);
@@ -59,23 +71,27 @@ export class SurveyPanelBase extends SurveyElementBase {
       }
     }
   }
-  protected renderRows(): Array<JSX.Element> {
-    var rows = [];
-    var questionRows = this.panelBase.rows;
-    for (var i = 0; i < questionRows.length; i++) {
-      rows.push(this.createRow(questionRows[i], i));
-    }
-    return rows;
+
+  protected getIsVisible() {
+    return this.panelBase.isVisible;
   }
-  protected createRow(row: QuestionRowModel, index: number): JSX.Element {
-    var rowName = "row" + (index + 1);
+
+  protected canRender(): boolean {
+    return (
+      super.canRender() && !!this.survey && !!this.panelBase && !!this.panelBase.survey && this.getIsVisible()
+    );
+  }
+  protected renderRows(css: any): Array<JSX.Element> {
+    return this.panelBase.visibleRows.map((row) => this.createRow(row, css));
+  }
+  protected createRow(row: QuestionRowModel, css: any): JSX.Element {
     return (
       <SurveyRow
-        key={rowName}
+        key={row.id}
         row={row}
         survey={this.survey}
         creator={this.creator}
-        css={this.css}
+        css={css}
       />
     );
   }

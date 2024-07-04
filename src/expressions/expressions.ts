@@ -1,18 +1,32 @@
 import { HashTable, Helpers } from "../helpers";
 import { FunctionFactory } from "../functionsfactory";
 import { ProcessValue } from "../conditionProcessValue";
+import { settings } from "../settings";
 
 export abstract class Operand {
-  public abstract toString(): string;
+  public toString(func: (op: Operand) => string = undefined): string {
+    return "";
+  }
+  public abstract getType(): string;
   public abstract evaluate(processValue?: ProcessValue): any;
   public abstract setVariables(variables: Array<string>): any;
   public hasFunction(): boolean {
     return false;
   }
+  public hasAsyncFunction(): boolean { return false; }
+  public addToAsyncList(list: Array<FunctionOperand>): void {}
+  public isEqual(op: Operand): boolean {
+    return !!op && op.getType() === this.getType() && this.isContentEqual(op);
+  }
+  protected abstract isContentEqual(op: Operand): boolean;
+  protected areOperatorsEquals(op1: Operand, op2: Operand): boolean {
+    return !op1 && !op2 || !!op1 && op1.isEqual(op2);
+  }
 }
 
 export class BinaryOperand extends Operand {
   private consumer: Function;
+  private isArithmeticValue: boolean;
   constructor(
     private operatorName: string,
     private left: any = null,
@@ -20,6 +34,7 @@ export class BinaryOperand extends Operand {
     isArithmeticOp: boolean = false
   ) {
     super();
+    this.isArithmeticValue = isArithmeticOp;
     if (isArithmeticOp) {
       this.consumer = OperandMaker.binaryFunctions["arithmeticOp"](
         operatorName
@@ -32,7 +47,40 @@ export class BinaryOperand extends Operand {
       OperandMaker.throwInvalidOperatorError(operatorName);
     }
   }
-
+  private get requireStrictCompare(): boolean {
+    return this.getIsOperandRequireStrict(this.left) ||
+    this.getIsOperandRequireStrict(this.right);
+  }
+  private getIsOperandRequireStrict(op: any): boolean {
+    return !!op && op.requireStrictCompare;
+  }
+  public getType(): string {
+    return "binary";
+  }
+  public get isArithmetic(): boolean {
+    return this.isArithmeticValue;
+  }
+  public get isConjunction(): boolean {
+    return this.operatorName == "or" || this.operatorName == "and";
+  }
+  public get conjunction(): string {
+    return this.isConjunction ? this.operatorName : "";
+  }
+  public get operator(): string {
+    return this.operatorName;
+  }
+  public get leftOperand() {
+    return this.left;
+  }
+  public get rightOperand() {
+    return this.right;
+  }
+  protected isContentEqual(op: Operand): boolean {
+    const bOp = <BinaryOperand>op;
+    return bOp.operator === this.operator &&
+      this.areOperatorsEquals(this.left, bOp.left) &&
+      this.areOperatorsEquals(this.right, bOp.right);
+  }
   private evaluateParam(x: any, processValue?: ProcessValue): any {
     return x == null ? null : x.evaluate(processValue);
   }
@@ -41,18 +89,23 @@ export class BinaryOperand extends Operand {
     return this.consumer.call(
       this,
       this.evaluateParam(this.left, processValue),
-      this.evaluateParam(this.right, processValue)
+      this.evaluateParam(this.right, processValue),
+      this.requireStrictCompare
     );
   }
 
-  public toString(): string {
+  public toString(func: (op: Operand) => string = undefined): string {
+    if (!!func) {
+      var res = func(this);
+      if (!!res) return res;
+    }
     return (
       "(" +
-      OperandMaker.safeToString(this.left) +
+      OperandMaker.safeToString(this.left, func) +
       " " +
       OperandMaker.operatorToString(this.operatorName) +
       " " +
-      OperandMaker.safeToString(this.right) +
+      OperandMaker.safeToString(this.right, func) +
       ")"
     );
   }
@@ -68,46 +121,86 @@ export class BinaryOperand extends Operand {
       (!!this.right && this.right.hasFunction())
     );
   }
+  public hasAsyncFunction(): boolean {
+    return (
+      (!!this.left && this.left.hasAsyncFunction()) ||
+      (!!this.right && this.right.hasAsyncFunction())
+    );
+  }
+  public addToAsyncList(list: Array<FunctionOperand>) {
+    if (!!this.left) this.left.addToAsyncList(list);
+    if (!!this.right) this.right.addToAsyncList(list);
+  }
 }
 
 export class UnaryOperand extends Operand {
   private consumer: Function;
-  constructor(private expression: Operand, private operatorName: string) {
+  constructor(private expressionValue: Operand, private operatorName: string) {
     super();
     this.consumer = OperandMaker.unaryFunctions[operatorName];
     if (this.consumer == null) {
       OperandMaker.throwInvalidOperatorError(operatorName);
     }
   }
-
-  public toString(): string {
+  public get operator(): string {
+    return this.operatorName;
+  }
+  public get expression(): Operand {
+    return this.expressionValue;
+  }
+  public getType(): string {
+    return "unary";
+  }
+  public toString(func: (op: Operand) => string = undefined): string {
+    if (!!func) {
+      var res = func(this);
+      if (!!res) return res;
+    }
     return (
       OperandMaker.operatorToString(this.operatorName) +
-      this.expression.toString()
+      " " +
+      this.expression.toString(func)
     );
   }
-
+  protected isContentEqual(op: Operand): boolean {
+    const uOp = <UnaryOperand>op;
+    return uOp.operator == this.operator && this.areOperatorsEquals(this.expression, uOp.expression);
+  }
+  public hasFunction(): boolean {
+    return this.expression.hasFunction();
+  }
+  public hasAsyncFunction(): boolean {
+    return this.expression.hasAsyncFunction();
+  }
+  public addToAsyncList(list: Array<FunctionOperand>): void {
+    this.expression.addToAsyncList(list);
+  }
   public evaluate(processValue?: ProcessValue): boolean {
     let value = this.expression.evaluate(processValue);
     return this.consumer.call(this, value);
   }
-
   public setVariables(variables: Array<string>) {
     this.expression.setVariables(variables);
   }
 }
 
 export class ArrayOperand extends Operand {
-  constructor(private values: Array<Operand>) {
+  constructor(public values: Array<Operand>) {
     super();
   }
-
-  public toString(): string {
+  public getType(): string {
+    return "array";
+  }
+  public toString(func: (op: Operand) => string = undefined): string {
+    if (!!func) {
+      var res = func(this);
+      if (!!res) return res;
+    }
     return (
       "[" +
       this.values
         .map(function(el: Operand) {
-          return el.toString();
+          return el.toString(func);
         })
         .join(", ") +
       "]"
@@ -121,13 +214,27 @@ export class ArrayOperand extends Operand {
   }
 
   public setVariables(variables: Array<string>) {
-    this.values.forEach(el => {
+    this.values.forEach((el) => {
       el.setVariables(variables);
     });
   }
 
   public hasFunction(): boolean {
-    return this.values.some(operand => operand.hasFunction());
+    return this.values.some((operand) => operand.hasFunction());
+  }
+  public hasAsyncFunction(): boolean {
+    return this.values.some((operand) => operand.hasAsyncFunction());
+  }
+  public addToAsyncList(list: Array<FunctionOperand>) {
+    this.values.forEach((operand) => operand.addToAsyncList(list));
+  }
+  protected isContentEqual(op: Operand): boolean {
+    const aOp = <ArrayOperand>op;
+    if(aOp.values.length !== this.values.length) return false;
+    for(var i = 0; i < this.values.length; i ++) {
+      if(!aOp.values[i].isEqual(this.values[i])) return false;
+    }
+    return true;
   }
 }
 
@@ -135,11 +242,20 @@ export class Const extends Operand {
   constructor(private value: any) {
     super();
   }
-
-  public toString(): string {
+  public getType(): string {
+    return "const";
+  }
+  public toString(func: (op: Operand) => string = undefined): string {
+    if (!!func) {
+      var res = func(this);
+      if (!!res) return res;
+    }
     return this.value.toString();
   }
-
+  public get correctValue(): any {
+    return this.getCorrectValue(this.value);
+  }
+  public get requireStrictCompare(): boolean { return false; }
   public evaluate(): any {
     return this.getCorrectValue(this.value);
   }
@@ -147,12 +263,26 @@ export class Const extends Operand {
   public setVariables(variables: Array<string>) {}
   protected getCorrectValue(value: any): any {
     if (!value || typeof value != "string") return value;
-    if (this.isBooleanValue(value)) return value === "true";
-    if (this.isNumericValue(value)) {
+    if (this.isBooleanValue(value)) return value.toLowerCase() === "true";
+    if (
+      value.length > 1 &&
+      this.isQuote(value[0]) &&
+      this.isQuote(value[value.length - 1])
+    )
+      return value.substring(1, value.length - 1);
+    if (OperandMaker.isNumeric(value)) {
       if (value.indexOf("0x") == 0) return parseInt(value);
+      if (value.length > 1 && value[0] == "0" && (value.length < 2 || (value[1] !== "." && value[1] !== ","))) return value;
       return parseFloat(value);
     }
     return value;
+  }
+  protected isContentEqual(op: Operand): boolean {
+    const cOp = <Const>op;
+    return cOp.value == this.value;
+  }
+  private isQuote(ch: string): boolean {
+    return ch == "'" || ch == '"';
   }
   private isBooleanValue(value: any): boolean {
     return (
@@ -160,72 +290,128 @@ export class Const extends Operand {
       (value.toLowerCase() === "true" || value.toLowerCase() === "false")
     );
   }
-  private isNumericValue(value: any): boolean {
-    if (
-      value &&
-      (value.indexOf("-") > -1 ||
-        value.indexOf("+") > 1 ||
-        value.indexOf("*") > -1 ||
-        value.indexOf("^") > -1 ||
-        value.indexOf("/") > -1 ||
-        value.indexOf("%") > -1)
-    )
-      return false;
-    var val = Number(value);
-    if (isNaN(val)) return false;
-    return isFinite(val);
-  }
 }
 
 export class Variable extends Const {
+  public static get DisableConversionChar(): string { return settings.expressionDisableConversionChar; }
+  public static set DisableConversionChar(val: string) { settings.expressionDisableConversionChar = val; }
+  private valueInfo: any = {};
+  private useValueAsItIs: boolean = false;
   constructor(private variableName: string) {
     super(variableName);
+    if (
+      !!this.variableName &&
+      this.variableName.length > 1 &&
+      this.variableName[0] === Variable.DisableConversionChar
+    ) {
+      this.variableName = this.variableName.substring(1);
+      this.useValueAsItIs = true;
+    }
   }
-
-  public toString(): string {
-    return "{" + this.variableName + "}";
+  public get requireStrictCompare(): boolean {
+    return this.valueInfo.sctrictCompare === true;
   }
-
+  public getType(): string {
+    return "variable";
+  }
+  public toString(func: (op: Operand) => string = undefined): string {
+    if (!!func) {
+      var res = func(this);
+      if (!!res) return res;
+    }
+    var prefix = this.useValueAsItIs ? Variable.DisableConversionChar : "";
+    return "{" + prefix + this.variableName + "}";
+  }
+  public get variable(): string {
+    return this.variableName;
+  }
   public evaluate(processValue?: ProcessValue): any {
-    var variableName = this.variableName.toLowerCase();
-    return processValue.hasValue(variableName)
-      ? this.getCorrectValue(processValue.getValue(variableName))
+    this.valueInfo.name = this.variableName;
+    processValue.getValueInfo(this.valueInfo);
+    return this.valueInfo.hasValue
+      ? this.getCorrectValue(this.valueInfo.value)
       : null;
   }
   public setVariables(variables: Array<string>) {
     variables.push(this.variableName);
   }
+  protected getCorrectValue(value: any): any {
+    if (this.useValueAsItIs) return value;
+    return super.getCorrectValue(value);
+  }
+  protected isContentEqual(op: Operand): boolean {
+    const vOp = <Variable>op;
+    return vOp.variable == this.variable;
+  }
 }
 
 export class FunctionOperand extends Operand {
-  constructor(
-    private origionalValue: string,
-    private parameters: ArrayOperand
-  ) {
+  private isReadyValue: boolean;
+  private asynResult: any;
+  public onAsyncReady: () => void;
+  constructor(private originalValue: string, private parameters: ArrayOperand) {
     super();
+    this.isReadyValue = false;
     if (Array.isArray(parameters) && parameters.length === 0) {
       this.parameters = new ArrayOperand([]);
     }
   }
-
+  public getType(): string {
+    return "function";
+  }
+  public evaluateAsync(processValue: ProcessValue) {
+    this.isReadyValue = false;
+    var asyncProcessValue = new ProcessValue();
+    asyncProcessValue.values = Helpers.createCopy(processValue.values);
+    asyncProcessValue.properties = Helpers.createCopy(processValue.properties);
+    asyncProcessValue.properties.returnResult = (result: any) => {
+      this.asynResult = result;
+      this.isReadyValue = true;
+      this.onAsyncReady();
+    };
+    this.evaluateCore(asyncProcessValue);
+  }
   public evaluate(processValue?: ProcessValue): any {
+    if (this.isReady) return this.asynResult;
+    return this.evaluateCore(processValue);
+  }
+  private evaluateCore(processValue?: ProcessValue): any {
     return FunctionFactory.Instance.run(
-      this.origionalValue,
+      this.originalValue,
       this.parameters.evaluate(processValue),
-      processValue.properties
+      processValue.properties,
+      this.parameters.values
     );
   }
 
-  public toString() {
-    return this.origionalValue + "(" + this.parameters.toString() + ")";
+  public toString(func: (op: Operand) => string = undefined) {
+    if (!!func) {
+      var res = func(this);
+      if (!!res) return res;
+    }
+    return this.originalValue + "(" + this.parameters.toString(func) + ")";
   }
 
   public setVariables(variables: Array<string>) {
     this.parameters.setVariables(variables);
   }
-
+  public get isReady() {
+    return this.isReadyValue;
+  }
   public hasFunction(): boolean {
     return true;
+  }
+  public hasAsyncFunction(): boolean {
+    return FunctionFactory.Instance.isAsyncFunction(this.originalValue);
+  }
+  public addToAsyncList(list: Array<FunctionOperand>) {
+    if (this.hasAsyncFunction()) {
+      list.push(this);
+    }
+  }
+  protected isContentEqual(op: Operand): boolean {
+    const fOp = <FunctionOperand>op;
+    return fOp.originalValue == this.originalValue && this.areOperatorsEquals(fOp.parameters, this.parameters);
   }
 }
 
@@ -234,17 +420,22 @@ export class OperandMaker {
     throw new Error("Invalid operator: '" + op + "'");
   }
 
-  static safeToString(operand: Operand): string {
-    return operand == null ? "" : operand.toString();
+  static safeToString(operand: Operand, func: (op: Operand) => string): string {
+    return operand == null ? "" : operand.toString(func);
   }
 
   static toOperandString(value: string): string {
     if (
       !!value &&
-      (!OperandMaker.isNumeric(value) && !OperandMaker.isBooleanValue(value))
+      !OperandMaker.isNumeric(value) &&
+      !OperandMaker.isBooleanValue(value)
     )
       value = "'" + value + "'";
     return value;
+  }
+
+  static isSpaceString(str: string): boolean {
+    return !!str && !str.replace(" ", "");
   }
 
   static isNumeric(value: string): boolean {
@@ -258,9 +449,8 @@ export class OperandMaker {
         value.indexOf("%") > -1)
     )
       return false;
-    var val = Number(value);
-    if (isNaN(val)) return false;
-    return isFinite(val);
+    if (OperandMaker.isSpaceString(value)) return false;
+    return Helpers.isNumber(value);
   }
 
   static isBooleanValue(value: string): boolean {
@@ -269,26 +459,48 @@ export class OperandMaker {
       (value.toLowerCase() === "true" || value.toLowerCase() === "false")
     );
   }
-
-  static unaryFunctions: HashTable<Function> = {
-    empty: function(value: any): boolean {
-      if (value == null) return true;
-      return !value;
-    },
-    notempty: function(value: any): boolean {
-      return !OperandMaker.unaryFunctions.empty(value);
-    },
-    negate: function(value: boolean): boolean {
-      return !value;
+  static countDecimals(value: number): number {
+    if (Helpers.isNumber(value) && Math.floor(value) !== value) {
+      const strs = value.toString().split(".");
+      return strs.length > 1 && strs[1].length || 0;
     }
-  };
+    return 0;
+  }
+  static plusMinus(a: number, b: number, res: number): number {
+    const digitsA = OperandMaker.countDecimals(a);
+    const digitsB = OperandMaker.countDecimals(b);
+    if(digitsA > 0 || digitsB > 0) {
+      const digits = Math.max(digitsA, digitsB);
+      res = parseFloat(res.toFixed(digits));
+    }
+    return res;
+  }
+
+static unaryFunctions: HashTable<Function> = {
+  empty: function(value: any): boolean {
+    return Helpers.isValueEmpty(value);
+  },
+  notempty: function(value: any): boolean {
+    return !OperandMaker.unaryFunctions.empty(value);
+  },
+  negate: function(value: boolean): boolean {
+    return !value;
+  },
+};
 
   static binaryFunctions: HashTable<Function> = {
     arithmeticOp(operatorName: string) {
+      const convertForArithmeticOp = (val: any, second: any): any => {
+        if (!Helpers.isValueEmpty(val)) return val;
+        if(typeof second === "number") return 0;
+        if(typeof val === "string") return val;
+        if(typeof second === "string") return "";
+        if(Array.isArray(second)) return [];
+        return 0;
+      };
       return function(a: any, b: any): any {
-        if (Helpers.isValueEmpty(a)) a = 0;
-        if (Helpers.isValueEmpty(b)) b = 0;
-
+        a = convertForArithmeticOp(a, b);
+        b = convertForArithmeticOp(b, a);
         let consumer = OperandMaker.binaryFunctions[operatorName];
         return consumer == null ? null : consumer.call(this, a, b);
       };
@@ -299,14 +511,14 @@ export class OperandMaker {
     or: function(a: boolean, b: boolean): boolean {
       return a || b;
     },
-    plus: function(a: number, b: number): number {
-      return a + b;
+    plus: function(a: any, b: any): any {
+      return Helpers.sumAnyValues(a, b);
     },
     minus: function(a: number, b: number): number {
-      return a - b;
+      return Helpers.correctAfterPlusMinis(a, b, a - b);
     },
     mul: function(a: number, b: number): number {
-      return a * b;
+      return Helpers.correctAfterMultiple(a, b, a * b);
     },
     div: function(a: number, b: number): number {
       if (!b) return null;
@@ -321,25 +533,31 @@ export class OperandMaker {
     },
     greater: function(left: any, right: any): boolean {
       if (left == null || right == null) return false;
+      left = OperandMaker.convertValForDateCompare(left, right);
+      right = OperandMaker.convertValForDateCompare(right, left);
       return left > right;
     },
     less: function(left: any, right: any): boolean {
       if (left == null || right == null) return false;
+      left = OperandMaker.convertValForDateCompare(left, right);
+      right = OperandMaker.convertValForDateCompare(right, left);
       return left < right;
     },
     greaterorequal: function(left: any, right: any): boolean {
-      if (left == null || right == null) return false;
-      return left >= right;
+      if (OperandMaker.binaryFunctions.equal(left, right)) return true;
+      return OperandMaker.binaryFunctions.greater(left, right);
     },
     lessorequal: function(left: any, right: any): boolean {
-      if (left == null || right == null) return false;
-      return left <= right;
+      if (OperandMaker.binaryFunctions.equal(left, right)) return true;
+      return OperandMaker.binaryFunctions.less(left, right);
     },
-    equal: function(left: any, right: any): boolean {
-      return Helpers.isTwoValueEquals(left, right, true);
+    equal: function(left: any, right: any, strictCompare?: boolean): boolean {
+      left = OperandMaker.convertValForDateCompare(left, right);
+      right = OperandMaker.convertValForDateCompare(right, left);
+      return OperandMaker.isTwoValueEquals(left, right, strictCompare !== true);
     },
-    notequal: function(left: any, right: any): boolean {
-      return !Helpers.isTwoValueEquals(left, right, true);
+    notequal: function(left: any, right: any, strictCompare?: boolean): boolean {
+      return !OperandMaker.binaryFunctions.equal(left, right, strictCompare);
     },
     contains: function(left: any, right: any): boolean {
       return OperandMaker.binaryFunctions.containsCore(left, right, true);
@@ -349,9 +567,16 @@ export class OperandMaker {
       return OperandMaker.binaryFunctions.containsCore(left, right, false);
     },
     anyof: function(left: any, right: any): boolean {
-      if (!left && Helpers.isValueEmpty(right)) return true;
-      if (!left || !Array.isArray(left) || left.length === 0) return false;
+      if (Helpers.isValueEmpty(left) && Helpers.isValueEmpty(right))
+        return true;
+      if (
+        Helpers.isValueEmpty(left) ||
+        (!Array.isArray(left) && left.length === 0)
+      )
+        return false;
       if (Helpers.isValueEmpty(right)) return true;
+      if (!Array.isArray(left))
+        return OperandMaker.binaryFunctions.contains(right, left);
       if (!Array.isArray(right))
         return OperandMaker.binaryFunctions.contains(left, right);
       for (var i = 0; i < right.length; i++) {
@@ -370,9 +595,13 @@ export class OperandMaker {
       return true;
     },
     containsCore: function(left: any, right: any, isContains: any): boolean {
-      if (!left) return false;
+      if (!left && left !== 0 && left !== false) return false;
       if (!left.length) {
         left = left.toString();
+        if (typeof right === "string" || right instanceof String) {
+          left = left.toUpperCase();
+          right = right.toUpperCase();
+        }
       }
       if (typeof left === "string" || left instanceof String) {
         if (!right) return false;
@@ -385,19 +614,31 @@ export class OperandMaker {
         var i = 0;
         right = rightArray[rIndex];
         for (; i < left.length; i++) {
-          if (Helpers.isTwoValueEquals(left[i], right)) break;
+          if (OperandMaker.isTwoValueEquals(left[i], right)) break;
         }
         if (i == left.length) return !isContains;
       }
       return isContains;
-    }
+    },
   };
 
+  static isTwoValueEquals(x: any, y: any, ignoreOrder: boolean = true): boolean {
+    if (x === "undefined") x = undefined;
+    if (y === "undefined") y = undefined;
+    return Helpers.isTwoValueEquals(x, y, ignoreOrder);
+  }
   static operatorToString(operatorName: string): string {
     let opStr = OperandMaker.signs[operatorName];
     return opStr == null ? operatorName : opStr;
   }
-
+  static convertValForDateCompare(val: any, second: any): any {
+    if(second instanceof Date && typeof val === "string") {
+      let res = new Date(val);
+      res.setHours(0, 0, 0);
+      return res;
+    }
+    return val;
+  }
   static signs: HashTable<string> = {
     less: "<",
     lessorequal: "<=",
@@ -409,10 +650,10 @@ export class OperandMaker {
     minus: "-",
     mul: "*",
     div: "/",
-    and: "&&",
-    or: "||",
+    and: "and",
+    or: "or",
     power: "^",
     mod: "%",
-    negate: "!"
+    negate: "!",
   };
 }

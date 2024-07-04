@@ -1,84 +1,49 @@
 import * as ko from "knockout";
-import {
-  QuestionMatrixModel,
-  MatrixRowModel,
-  IMatrixData
-} from "../question_matrix";
+import { QuestionMatrixModel, MatrixRowModel, IMatrixData } from "survey-core";
 import { QuestionImplementor } from "./koquestion";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
-import { ItemValue } from "../itemvalue";
-import { Helpers } from "../helpers";
+import { ImplementorBase } from "./kobase";
+import { Serializer } from "survey-core";
+import { QuestionFactory } from "survey-core";
 
-export class MatrixRow extends MatrixRowModel {
-  private isValueUpdating = false;
-  koValue: any;
-  koCellClick: any;
-  constructor(
-    item: ItemValue,
-    public fullName: string,
-    data: IMatrixData,
-    value: any
-  ) {
-    super(item, fullName, data, value);
-    this.koValue = ko.observable(this.value);
-    var self = this;
-    this.koValue.subscribe(function(newValue: any) {
-      if (self.isValueUpdating) true;
-      self.value = newValue;
-    });
-    this.koCellClick = function(column: any) {
-      self.koValue(column.value);
-    };
-  }
-  protected onValueChanged() {
-    this.isValueUpdating = true;
-    if (!Helpers.isTwoValueEquals(this.koValue(), this.value)) {
-      this.koValue(this.value);
-    }
-    this.isValueUpdating = false;
-  }
-}
 export class QuestionMatrix extends QuestionMatrixModel {
-  koVisibleRows: any;
-  koVisibleColumns: any;
-  constructor(public name: string) {
+  private _implementor: QuestionImplementor;
+  koVisibleRows: any = <any>ko.observableArray<MatrixRowModel>();
+  koVisibleColumns: any = <any>ko.observableArray<any>();
+  constructor(name: string) {
     super(name);
-    new QuestionImplementor(this);
-    this.koVisibleRows = ko.observable(this.visibleRows);
-    this.koVisibleColumns = ko.observable(this.visibleColumns);
+    this.koVisibleRows(this.visibleRows);
+    this.koVisibleColumns(this.visibleColumns);
+  }
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionImplementor(this);
   }
   protected onColumnsChanged() {
     super.onColumnsChanged();
-    this.koVisibleRows(this.visibleRows);
     this.koVisibleColumns(this.visibleColumns);
   }
   protected onRowsChanged() {
     super.onRowsChanged();
     this.koVisibleRows(this.visibleRows);
-    this.koVisibleColumns(this.visibleColumns);
   }
   public onSurveyLoad() {
     super.onSurveyLoad();
     this.onRowsChanged();
   }
-  protected createMatrixRow(
-    item: ItemValue,
-    fullName: string,
-    value: any
-  ): MatrixRowModel {
-    return new MatrixRow(item, fullName, this, value);
+  protected onMatrixRowCreated(row: MatrixRowModel) {
+    new ImplementorBase(row);
   }
-  public getItemCss(row: any, column: any) {
-    var isChecked = row.koValue() == column.value;
-    var cellSelectedClass = this.hasCellText
-      ? this.cssClasses.cellTextSelected
-      : "checked";
-    var cellClass = this.hasCellText
-      ? (<any>this)["koCss"]().cellText
-      : (<any>this)["koCss"]().label;
-    let itemClass = cellClass + (isChecked ? " " + cellSelectedClass : "");
-    return itemClass;
+  protected getVisibleRows(): Array<MatrixRowModel> {
+    var rows = super.getVisibleRows();
+    this.koVisibleRows(rows);
+    return rows;
+  }
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    this.koVisibleRows = undefined;
+    this.koVisibleColumns = undefined;
+    super.dispose();
   }
 }
 

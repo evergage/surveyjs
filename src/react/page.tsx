@@ -1,45 +1,54 @@
 import * as React from "react";
-import { PageModel } from "../page";
-import { SurveyElementBase } from "./reactquestionelement";
-
+import { PageModel, PanelModelBase } from "survey-core";
+import { SurveyElementBase } from "./reactquestion_element";
 import { SurveyPanelBase } from "./panel-base";
+import { TitleElement } from "./components/title/title-element";
+import { SurveyElementErrors } from "./reactquestion";
 
 export class SurveyPage extends SurveyPanelBase {
   constructor(props: any) {
     super(props);
-    this.panelBase = props.page;
   }
-  componentWillReceiveProps(nextProps: any) {
-    this.unMakeBaseElementReact(this.panelBase);
-    super.componentWillReceiveProps(nextProps);
-    this.panelBase = nextProps.page;
-    this.makeBaseElementReact(this.panelBase);
+  protected getPanelBase(): PanelModelBase {
+    return this.props.page;
   }
   public get page(): PageModel {
     return this.panelBase as PageModel;
   }
-  render(): JSX.Element {
-    if (this.page == null || this.survey == null || this.creator == null)
-      return null;
+
+  // shouldComponentUpdate(nextProps: any, nextState: any): boolean {
+  //   if(!super.shouldComponentUpdate(nextProps, nextState)) return false;
+  //   return true;
+  // }
+
+  protected renderElement(): JSX.Element {
     var title = this.renderTitle();
     var description = this.renderDescription();
-    var rows = this.renderRows();
+    var rows = this.renderRows(this.panelBase.cssClasses);
+    const errors = (
+      <SurveyElementErrors
+        element={this.panelBase}
+        cssClasses={this.panelBase.cssClasses}
+        creator={this.creator}
+      />
+    );
     return (
-      <div ref="root" className={this.css.page.root}>
+      <div ref={this.rootRef} className={this.page.cssRoot}>
         {title}
         {description}
+        {errors}
         {rows}
-      </div>
+      </div >
     );
   }
   protected renderTitle(): JSX.Element {
-    if (!this.page.title || !this.survey.showPageTitles) return null;
-    var text = SurveyElementBase.renderLocString(this.page.locTitle);
-    return <h4 className={this.css.pageTitle}>{text}</h4>;
+    return <TitleElement element={this.page}></TitleElement>;
   }
-  protected renderDescription(): JSX.Element {
-    if (!this.page.description || !this.survey.showPageTitles) return null;
+  protected renderDescription(): JSX.Element | null {
+    if (!this.page._showDescription) return null;
     var text = SurveyElementBase.renderLocString(this.page.locDescription);
-    return <div className={this.css.pageDescription}>{text}</div>;
+    return (
+      <div className={this.panelBase.cssClasses.page.description}>{text}</div>
+    );
   }
 }

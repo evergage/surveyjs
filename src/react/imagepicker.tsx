@@ -1,22 +1,109 @@
 import * as React from "react";
-import { SurveyQuestionElementBase } from "./reactquestionelement";
-import { QuestionImagePickerModel } from "../question_imagepicker";
-import { ItemValue } from "../itemvalue";
-import { ReactQuestionFactory } from "./reactquestionfactory";
+import { ReactSurveyElement, SurveyElementBase, SurveyQuestionElementBase } from "./reactquestion_element";
+import { QuestionImagePickerModel, ImageItemValue, SurveyModel } from "survey-core";
+import { ReactQuestionFactory } from "./reactquestion_factory";
+import { ReactSurveyElementsWrapper } from "./reactsurveymodel";
+import { SvgIcon } from "./components/svg-icon/svg-icon";
 
 export class SurveyQuestionImagePicker extends SurveyQuestionElementBase {
   constructor(props: any) {
     super(props);
-    this.handleOnChange = this.handleOnChange.bind(this);
   }
   protected get question(): QuestionImagePickerModel {
     return this.questionBase as QuestionImagePickerModel;
   }
-  componentWillReceiveProps(nextProps: any) {
-    super.componentWillReceiveProps(nextProps);
+  protected renderElement(): JSX.Element {
+    var cssClasses = this.question.cssClasses;
+    return (
+      <fieldset className={this.question.getSelectBaseRootCss()}>
+        <legend className="sv-hidden">{this.question.locTitle.renderedHtml}</legend>
+        {this.question.hasColumns ? this.getColumns(cssClasses) : this.getItems(cssClasses)}
+      </fieldset>
+    );
+  }
+
+  protected getColumns(cssClasses: any) {
+    return this.question.columns.map((column: any, ci: number) => {
+      var items = column.map((item: any, ii: number) =>
+        this.renderItem(
+          "item" + ii,
+          item,
+          cssClasses
+        )
+      );
+      return (
+        <div key={"column" + ci} className={this.question.getColumnClass()} role="presentation">
+          {items}
+        </div>
+      );
+    });
+  }
+
+  protected getItems(cssClasses: any): Array<any> {
+    var items:Array<JSX.Element> = [];
+    for (var i = 0; i < this.question.visibleChoices.length; i++) {
+      var item = this.question.visibleChoices[i];
+      var key = "item" + i;
+      items.push(this.renderItem(key, item as ImageItemValue, cssClasses));
+    }
+    return items;
+  }
+  protected get textStyle(): any {
+    return { marginLeft: "3px", display: "inline", position: "static" };
+  }
+  protected renderItem(
+    key: string,
+    item: ImageItemValue,
+    cssClasses: any
+  ): JSX.Element {
+    const renderedItem = <SurveyQuestionImagePickerItem key={key} question={this.question} item={item} cssClasses={cssClasses}></SurveyQuestionImagePickerItem>;
+    const survey = this.question.survey as SurveyModel;
+    let wrappedItem: JSX.Element | null = null;
+    if(!!survey) {
+      wrappedItem = ReactSurveyElementsWrapper.wrapItemValue(survey, renderedItem, this.question, item);
+    }
+    return wrappedItem ?? renderedItem;
+  }
+}
+export class SurveyQuestionImagePickerItem extends ReactSurveyElement {
+  constructor(props: any) {
+    super(props);
     this.handleOnChange = this.handleOnChange.bind(this);
   }
+  protected getStateElement() {
+    return this.item;
+  }
+  componentDidMount() {
+    super.componentDidMount();
+    this.reactOnStrChanged();
+  }
+  componentWillUnmount() {
+    super.componentWillUnmount();
+    this.item.locImageLink.onChanged = function () {};
+  }
+  componentDidUpdate(prevProps: any, prevState: any) {
+    super.componentDidUpdate(prevProps, prevState);
+    this.reactOnStrChanged();
+  }
+  private reactOnStrChanged() {
+    this.item.locImageLink.onChanged = () => {
+      this.setState({ locImageLinkchanged: !!this.state && this.state.locImageLink ? this.state.locImageLink + 1 : 1 });
+    };
+  }
+  protected get cssClasses() {
+    return this.props.cssClasses;
+  }
+
+  protected get item() {
+    return this.props.item;
+  }
+
+  protected get question() {
+    return this.props.question;
+  }
+
   handleOnChange(event: any) {
+    if (this.question.isReadOnlyAttr) return;
     if (this.question.multiSelect) {
       if (event.target.checked) {
         this.question.value = this.question.value.concat(event.target.value);
@@ -30,134 +117,113 @@ export class SurveyQuestionImagePicker extends SurveyQuestionElementBase {
     }
     this.setState({ value: this.question.value });
   }
-  render(): JSX.Element {
-    if (!this.question) return null;
-    var cssClasses = this.question.cssClasses;
-    return (
-      <fieldset className={cssClasses.root}>
-        <legend aria-label={this.question.locTitle.renderedHtml} />
-        {this.getItems(cssClasses)}
-      </fieldset>
-    );
-  }
-  protected getItems(cssClasses: any): Array<any> {
-    var items = [];
-    for (var i = 0; i < this.question.visibleChoices.length; i++) {
-      var item = this.question.visibleChoices[i];
-      var key = "item" + i;
-      items.push(this.renderItem(key, item, i === 0, cssClasses));
-    }
-    return items;
-  }
-  protected get textStyle(): any {
-    return { marginLeft: "3px", display: "inline", position: "static" };
-  }
-  private renderItem(
-    key: string,
-    item: ItemValue,
-    isFirst: boolean,
-    cssClasses: any
-  ): JSX.Element {
-    var isChecked = this.question.value === item.value;
-    if (this.question.multiSelect) {
-      isChecked = this.question.value.indexOf(item.value) !== -1;
-    }
-    return this.renderElement(key, item, isChecked, isFirst, cssClasses);
-  }
-  protected renderElement(
-    key: string,
-    item: ItemValue,
-    isChecked: boolean,
-    isFirst: boolean,
-    cssClasses: any
-  ): JSX.Element {
-    var id = isFirst ? this.question.inputId : null;
-    let itemClass =
-      cssClasses.item +
-      (this.question.colCount === 0
-        ? " sv_q_imagepicker_inline"
-        : " sv-q-col-" + this.question.colCount);
 
-    if (isChecked) itemClass += " checked";
-    var text = null;
-    if (this.question.showLabel) {
+  protected renderElement(): JSX.Element {
+    const item = this.item;
+    const question = this.question;
+    const cssClasses = this.cssClasses;
+    var isChecked = question.isItemSelected(item);
+    var itemClass = question.getItemClass(item);
+    var text: JSX.Element | null = null;
+    if (question.showLabel) {
       text = (
         <span
-          title={item.text || item.value}
-          className={this.question.cssClasses.itemText}
+          className={question.cssClasses.itemText}
         >
-          {item.text || item.value}
+          {item.text ? SurveyElementBase.renderLocString(item.locText) : item.value}
         </span>
       );
     }
 
     var style: any = { objectFit: this.question.imageFit };
 
-    var control = null;
-    if (this.question.contentMode === "image") {
+    var control: JSX.Element | null = null;
+    if (item.locImageLink.renderedHtml && this.question.contentMode === "image") {
       control = (
         <img
           className={cssClasses.image}
-          src={item["imageLink"]}
-          width={
-            this.question.imageWidth
-              ? this.question.imageWidth + "px"
-              : undefined
-          }
-          height={
-            this.question.imageHeight
-              ? this.question.imageHeight + "px"
-              : undefined
-          }
+          src={item.locImageLink.renderedHtml}
+          width={ this.question.renderedImageWidth }
+          height={ this.question.renderedImageHeight }
+          alt={item.locText.renderedHtml}
           style={style}
+          onLoad={(event: any) => { this.question["onContentLoaded"](item, event.nativeEvent); }}
+          onError={(event: any) => { item.onErrorHandler(item, event.nativeEvent); }}
         />
       );
     }
-    if (this.question.contentMode === "video") {
+    if (item.locImageLink.renderedHtml && this.question.contentMode === "video") {
       control = (
-        <embed
+        <video controls
           className={cssClasses.image}
-          src={item["imageLink"]}
-          width={
-            this.question.imageWidth
-              ? this.question.imageWidth + "px"
-              : undefined
-          }
-          height={
-            this.question.imageHeight
-              ? this.question.imageHeight + "px"
-              : undefined
-          }
+          src={item.locImageLink.renderedHtml}
+          width={ this.question.renderedImageWidth }
+          height={ this.question.renderedImageHeight }
           style={style}
-        />
+          onLoadedMetadata={(event: any) => { this.question["onContentLoaded"](item, event.nativeEvent); }}
+          onError={(event: any) => { item.onErrorHandler(item, event.nativeEvent); }}
+        ></video>
+      );
+    }
+    if (!item.locImageLink.renderedHtml || item.contentNotLoaded) {
+      let style: any = {
+        width: this.question.renderedImageWidth,
+        height: this.question.renderedImageHeight,
+        objectFit: this.question.imageFit
+      };
+      control = (
+        <div
+          className={cssClasses.itemNoImage}
+          style={style}
+        >
+          {
+            cssClasses.itemNoImageSvgIcon ?
+              <SvgIcon
+                className={cssClasses.itemNoImageSvgIcon}
+                iconName={this.question.cssClasses.itemNoImageSvgIconId}
+                size={48}
+              ></SvgIcon>:
+              null
+          }
+        </div>
       );
     }
 
-    return (
-      <div key={key} className={itemClass}>
+    const renderedItem = (
+      <div className={itemClass}>
         <label className={cssClasses.label}>
           <input
-            style={{ display: "none" }}
             className={cssClasses.itemControl}
-            id={id}
-            type={this.question.multiSelect ? "checkbox" : "radio"}
-            name={this.question.name + "_" + this.questionBase.id}
+            id={this.question.getItemId(item)}
+            type={this.question.inputType}
+            name={this.question.questionName}
             checked={isChecked}
             value={item.value}
-            disabled={this.isDisplayMode}
+            disabled={!this.question.getItemEnabled(item)}
+            readOnly={this.question.isReadOnlyAttr}
             onChange={this.handleOnChange}
-            aria-label={this.question.locTitle.renderedHtml}
+            aria-required={this.question.ariaRequired}
+            aria-label={this.question.ariaLabel}
+            aria-invalid={this.question.ariaInvalid}
+            aria-errormessage={this.question.ariaErrormessage}
           />
-          <div>
-            {control}
+          <div className={this.question.cssClasses.itemDecorator}>
+            <div className={this.question.cssClasses.imageContainer}>
+              {!!this.question.cssClasses.checkedItemDecorator ?
+                <span className={this.question.cssClasses.checkedItemDecorator }>
+                  {!!this.question.cssClasses.checkedItemSvgIconId ? <SvgIcon size={"auto"} className={this.question.cssClasses.checkedItemSvgIcon} iconName={this.question.cssClasses.checkedItemSvgIconId}></SvgIcon> : null}
+                </span> : null}
+              {control}
+            </div>
             {text}
           </div>
         </label>
       </div>
     );
+    return renderedItem;
   }
 }
 
-ReactQuestionFactory.Instance.registerQuestion("imagepicker", props => {
+ReactQuestionFactory.Instance.registerQuestion("imagepicker", (props) => {
   return React.createElement(SurveyQuestionImagePicker, props);
 });

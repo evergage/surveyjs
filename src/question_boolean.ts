@@ -1,15 +1,23 @@
 import { QuestionFactory } from "./questionfactory";
-import { Serializer } from "./jsonobject";
+import { property, Serializer } from "./jsonobject";
 import { Question } from "./question";
 import { LocalizableString } from "./localizablestring";
+import { surveyLocalization } from "./surveyStrings";
+import { CssClassBuilder } from "./utils/cssClassBuilder";
+import { preventDefaults } from "./utils/utils";
+import { ActionContainer } from "./actions/container";
+import { DomDocumentHelper } from "./global_variables_utils";
 
 /**
- * A Model for a boolean question.
+ * A class that describes the Yes/No (Boolean) question type.
+ *
+ * [View Demo](https://surveyjs.io/form-library/examples/questiontype-boolean/ (linkStyle))
  */
 export class QuestionBooleanModel extends Question {
-  constructor(public name: string) {
+  constructor(name: string) {
     super(name);
-    this.createLocalizableString("label", this, true);
+    this.createLocalizableString("labelFalse", this, true, "booleanUncheckedLabel");
+    this.createLocalizableString("labelTrue", this, true, "booleanCheckedLabel");
   }
   public getType(): string {
     return "boolean";
@@ -17,39 +25,47 @@ export class QuestionBooleanModel extends Question {
   isLayoutTypeSupported(layoutType: string): boolean {
     return true;
   }
-  /**
-   * Returns true if the question check will be rendered in indeterminate mode. value is empty.
-   */
+  supportGoNextPageAutomatic(): boolean {
+    return this.renderAs !== "checkbox";
+  }
   public get isIndeterminate(): boolean {
     return this.isEmpty();
   }
   public get hasTitle(): boolean {
-    return this.showTitle;
-  }
-  supportGoNextPageAutomatic() {
     return true;
   }
   /**
-   * Get/set question value in 3 modes: indeterminate (value is empty), true (check is set) and false (check is unset).
+   * Gets or sets the question value as a Boolean value.
+   *
+   * If you set the `valueTrue` and `valueFalse` properties, the `value` property contains their values instead of Boolean values. This may be inconvenient when you operate the question value in code. To access the standard Boolean values, use the `booleanValue` property.
    * @see valueTrue
    * @see valueFalse
    */
-  public get checkedValue(): any {
+  public get booleanValue(): any {
     if (this.isEmpty()) return null;
     return this.value == this.getValueTrue();
   }
-  public set checkedValue(val: any) {
+  public set booleanValue(val: any) {
+    if (this.isReadOnly || this.isDesignMode) {
+      return;
+    }
+    this.setBooleanValue(val);
+  }
+  @property() booleanValueRendered: boolean;
+
+  public get checkedValue(): any { return this.booleanValue; }
+  public set checkedValue(val: any) { this.booleanValue = val; }
+  private setBooleanValue(val: any) {
     if (this.isValueEmpty(val)) {
-      this.value = null;
+      this.value = undefined;
+      this.booleanValueRendered = undefined;
     } else {
       this.value = val == true ? this.getValueTrue() : this.getValueFalse();
+      this.booleanValueRendered = val;
     }
   }
-  /**
-   * Set the default state of the check: "indeterminate" - default (value is empty/null), "true" - value equals valueTrue or true, "false" - value equals valueFalse or false.
-   */
   public get defaultValue(): any {
-    return this.getPropertyValue("defaultValue", "indeterminate");
+    return this.getPropertyValue("defaultValue");
   }
   public set defaultValue(val: any) {
     if (val === true) val = "true";
@@ -58,89 +74,302 @@ export class QuestionBooleanModel extends Question {
     this.updateValueWithDefaults();
   }
   public getDefaultValue(): any {
-    if (this.defaultValue == "indeterminate") return null;
-    return this.defaultValue == "true"
-      ? this.getValueTrue()
-      : this.getValueFalse();
+    const val = this.defaultValue;
+    if (val === "indeterminate" || val === undefined || val === null) return undefined;
+    return val == "true" ? this.getValueTrue() : this.getValueFalse();
+  }
+  public get locTitle(): LocalizableString {
+    const original = this.getLocalizableString("title");
+    if (!this.isValueEmpty(this.locLabel.text) && (this.isValueEmpty(original.text) || this.isLabelRendered && !this.showTitle)) return this.locLabel;
+    return original;
+  }
+  public get labelRenderedAriaID(): string {
+    return this.isLabelRendered ? this.ariaTitleId : null;
+  }
+
+  public beforeDestroyQuestionElement(el: HTMLElement): void {
+    super.beforeDestroyQuestionElement(el);
+    this.leftAnswerElement = undefined;
+  }
+
+  //Obsolete
+  @property() showTitle: boolean;
+  //Obsolete, use title
+  @property({ localizable: true }) label: string;
+  get isLabelRendered(): boolean {
+    return this.titleLocation === "hidden";
+  }
+  get canRenderLabelDescription(): boolean {
+    return this.isLabelRendered && this.hasDescription && (this.hasDescriptionUnderTitle || this.hasDescriptionUnderInput);
   }
   /**
-   * The checkbox label. If it is empty and showTitle is false then title is rendered
-   * @see showTitle
-   * @see title
+   * Gets or sets a text label that corresponds to a positive answer.
+   *
+   * Default value: "Yes"
+   * @see valueTrue
+   * @see valueFalse
    */
-  public get label(): string {
-    return this.getLocalizableStringText("label");
+  public get labelTrue(): string {
+    return this.getLocalizableStringText("labelTrue");
   }
-  public set label(val: string) {
-    this.setLocalizableStringText("label", val);
+  public set labelTrue(val: string) {
+    this.setLocalizableStringText("labelTrue", val);
   }
-  get locLabel(): LocalizableString {
-    return this.getLocalizableString("label");
+  get locLabelTrue(): LocalizableString {
+    return this.getLocalizableString("labelTrue");
   }
-  get locDisplayLabel(): LocalizableString {
-    if (this.locLabel.text) return this.locLabel;
-    return this.showTitle ? this.locLabel : this.locTitle;
+  get isDeterminated(): boolean {
+    return this.booleanValue !== null && this.booleanValue !== undefined;
+  }
+
+  /**
+   * Specifies whether to swap the order of the Yes and No answers.
+   *
+   * Default value: `false`
+   *
+   * By default, the order is [ "No", "Yes"]. Enable this property to reorder the answers as follows: [ "Yes", "No" ].
+   */
+  @property({ defaultValue: false }) swapOrder: boolean;
+  get locLabelLeft(): LocalizableString {
+    return this.swapOrder ? this.getLocalizableString("labelTrue") : this.getLocalizableString("labelFalse");
+  }
+  get locLabelRight(): LocalizableString {
+    return this.swapOrder ? this.getLocalizableString("labelFalse") : this.getLocalizableString("labelTrue");
+  }
+
+  /**
+   * Gets or sets a text label that corresponds to a negative answer.
+   *
+   * Default value: "No"
+   * @see valueTrue
+   * @see valueFalse
+   */
+  public get labelFalse(): string {
+    return this.getLocalizableStringText("labelFalse");
+  }
+  public set labelFalse(val: string) {
+    this.setLocalizableStringText("labelFalse", val);
+  }
+  get locLabelFalse(): LocalizableString {
+    return this.getLocalizableString("labelFalse");
   }
   /**
-   * Set this property to true to show the question title. It is hidden by default.
+   * A value to save in survey results when respondents give a positive answer.
+   *
+   * Default value: `true`
+   * @see labelTrue
+   * @see labelFalse
    */
-  public get showTitle(): boolean {
-    return this.getPropertyValue("showTitle");
-  }
-  public set showTitle(val: boolean) {
-    this.setPropertyValue("showTitle", val);
-  }
+  @property()
+  valueTrue: any;
   /**
-   * Set this property, if you want to have a different value from true when check is set.
+   * A value to save in survey results when respondents give a negative answer.
+   *
+   * Default value: `false`
+   * @see labelTrue
+   * @see labelFalse
    */
-  public get valueTrue(): any {
-    return this.getPropertyValue("valueTrue");
+  @property()
+  valueFalse: any;
+
+  public getValueTrue(): any {
+    return this.valueTrue !== undefined ? this.valueTrue : true;
   }
-  public set valueTrue(val: any) {
-    this.setPropertyValue("valueTrue", val);
+  public getValueFalse(): any {
+    return this.valueFalse !== undefined ? this.valueFalse : false;
   }
-  /**
-   * Set this property, if you want to have a different value from false when check is unset.
-   */
-  public get valueFalse(): any {
-    return this.getPropertyValue("valueFalse");
+  protected setDefaultValue(): void {
+    if (this.isDefaultValueSet("true", this.valueTrue)) this.setBooleanValue(true);
+    if (this.isDefaultValueSet("false", this.valueFalse)) this.setBooleanValue(false);
+    const val = this.defaultValue;
+    if (val === "indeterminate" || val === null || val === undefined) this.setBooleanValue(undefined);
   }
-  public set valueFalse(val: any) {
-    this.setPropertyValue("valueFalse", val);
+  private isDefaultValueSet(defaultValueCheck: any, valueTrueOrFalse: any): boolean {
+    return this.defaultValue == defaultValueCheck || (valueTrueOrFalse !== undefined && this.defaultValue === valueTrueOrFalse);
   }
-  private getValueTrue(): any {
-    return this.valueTrue ? this.valueTrue : true;
+  protected getDisplayValueCore(keysAsText: boolean, value: any): any {
+    if (value == this.getValueTrue()) return this.locLabelTrue.textOrHtml;
+    return this.locLabelFalse.textOrHtml;
   }
-  private getValueFalse(): any {
-    return this.valueFalse ? this.valueFalse : false;
+  private getItemCssValue(css: any): string {
+    return new CssClassBuilder()
+      .append(css.item)
+      .append(css.itemOnError, this.hasCssError())
+      .append(css.itemDisabled, this.isDisabledStyle)
+      .append(css.itemReadOnly, this.isReadOnlyStyle)
+      .append(css.itemPreview, this.isPreviewStyle)
+      .append(css.itemHover, !this.isDesignMode)
+      .append(css.itemChecked, !!this.booleanValue)
+      .append(css.itemExchanged, !!this.swapOrder)
+      .append(css.itemIndeterminate, !this.isDeterminated)
+      .toString();
   }
-  protected setDefaultValue() {
-    if (this.defaultValue == "true") this.checkedValue = true;
-    if (this.defaultValue == "false") this.checkedValue = false;
-    if (this.defaultValue == "indeterminate") this.value = null;
+
+  public getItemCss(): string {
+    return this.getItemCssValue(this.cssClasses);
   }
+  public getCheckboxItemCss() {
+    return this.getItemCssValue(
+      {
+        item: this.cssClasses.checkboxItem,
+        itemOnError: this.cssClasses.checkboxItemOnError,
+        itemDisabled: this.cssClasses.checkboxItemDisabled,
+        itemDisable: this.cssClasses.checkboxItemDisabled,
+        itemReadOnly: this.cssClasses.checkboxItemReadOnly,
+        itemPreview: this.cssClasses.checkboxItemPreview,
+        itemChecked: this.cssClasses.checkboxItemChecked,
+        itemIndeterminate: this.cssClasses.checkboxItemIndeterminate
+      }
+    );
+  }
+
+  public getLabelCss(checked: boolean): string {
+    return new CssClassBuilder()
+      .append(this.cssClasses.label)
+      .append(this.cssClasses.disabledLabel, this.booleanValue === !checked || this.isDisabledStyle)
+      .append(this.cssClasses.labelReadOnly, this.isReadOnlyStyle)
+      .append(this.cssClasses.labelPreview, this.isPreviewStyle)
+      .append(this.cssClasses.labelTrue, !this.isIndeterminate && checked === !this.swapOrder)
+      .append(this.cssClasses.labelFalse, !this.isIndeterminate && checked === this.swapOrder)
+      .toString();
+  }
+
+  updateValueFromSurvey(newValue: any, clearData: boolean = false): void {
+    super.updateValueFromSurvey(newValue, clearData);
+  }
+
+  protected onValueChanged(): void {
+    super.onValueChanged();
+  }
+
+  public get svgIcon(): string {
+    if (this.booleanValue && this.cssClasses.svgIconCheckedId) return this.cssClasses.svgIconCheckedId;
+    if (!this.isDeterminated && this.cssClasses.svgIconIndId) return this.cssClasses.svgIconIndId;
+    if (!this.booleanValue && this.cssClasses.svgIconUncheckedId) return this.cssClasses.svgIconUncheckedId;
+    return this.cssClasses.svgIconId;
+  }
+
+  public get itemSvgIcon(): string {
+    if (this.isPreviewStyle && this.cssClasses.itemPreviewSvgIconId) {
+      return this.cssClasses.itemPreviewSvgIconId;
+    }
+    return this.cssClasses.itemSvgIconId;
+  }
+
+  public get allowClick(): boolean {
+    return this.isIndeterminate && !this.isInputReadOnly;
+  }
+
+  public getCheckedLabel(): LocalizableString {
+    if (this.booleanValue === true) {
+      return this.locLabelTrue;
+    } else if (this.booleanValue === false) {
+      return this.locLabelFalse;
+    }
+  }
+  protected setQuestionValue(newValue: any, updateIsAnswered: boolean = true): void {
+    if (newValue === "true" && this.valueTrue !== "true") newValue = true;
+    if (newValue === "false" && this.valueFalse !== "false") newValue = false;
+    if (newValue === "indeterminate" || newValue === null) newValue = undefined;
+    super.setQuestionValue(newValue, updateIsAnswered);
+  }
+  /* #region web-based methods */
+  public onLabelClick(event: any, value: boolean) {
+    if (this.allowClick) {
+      preventDefaults(event);
+      this.booleanValue = value;
+    }
+    return true;
+  }
+  private calculateBooleanValueByEvent(event: any, isRightClick: boolean) {
+    let isRtl = false;
+    if (DomDocumentHelper.isAvailable()) {
+      isRtl = DomDocumentHelper.getComputedStyle(event.target).direction == "rtl";
+    }
+    this.booleanValue = isRtl ? !isRightClick : isRightClick;
+  }
+  public onSwitchClickModel(event: any) {
+    if (this.allowClick) {
+      preventDefaults(event);
+      var isRightClick =
+        event.offsetX / event.target.offsetWidth > 0.5;
+      this.calculateBooleanValueByEvent(event, isRightClick);
+      return;
+    }
+    return true;
+  }
+  public onKeyDownCore(event: any): boolean {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.stopPropagation();
+      this.calculateBooleanValueByEvent(event, event.key === "ArrowRight");
+    }
+    return true;
+  }
+  /* #endregion */
+
+  public getRadioItemClass(css: any, value: any): string {
+    let className = undefined;
+    if (css.radioItem) {
+      className = css.radioItem;
+    }
+    if (css.radioItemChecked && value === this.booleanValue) {
+      className = (className ? className + " " : "") + css.radioItemChecked;
+    }
+    if (this.isDisabledStyle) {
+      className += " " + css.radioItemDisabled;
+    }
+    if (this.isReadOnlyStyle) {
+      className += " " + css.radioItemReadOnly;
+    }
+    if (this.isPreviewStyle) {
+      className += " " + css.radioItemPreview;
+    }
+    return className;
+  }
+
+  protected supportResponsiveness(): boolean {
+    return true;
+  }
+  protected getCompactRenderAs(): string {
+    return "radio";
+  }
+  protected createActionContainer(allowAdaptiveActions?: boolean): ActionContainer {
+    return super.createActionContainer(this.renderAs !== "checkbox");
+  }
+
+  //a11y
+  public get isNewA11yStructure(): boolean {
+    return true;
+  }
+  public get a11y_input_ariaRole(): string {
+    return "switch";
+  }
+  // EO a11y
 }
 
 Serializer.addClass(
   "boolean",
   [
+    { name: "showCommentArea:switch", layout: "row", visible: true, category: "general" },
+    { name: "label:text", serializationProperty: "locLabel", isSerializable: false, visible: false },
     {
-      name: "defaultValue:dropdown",
-      alternativeName: "booleanDefaultValue",
-      default: "indeterminate",
-      choices: ["indeterminate", "false", "true"]
+      name: "labelTrue:text",
+      serializationProperty: "locLabelTrue",
     },
-    { name: "label:text", serializationProperty: "locLabel" },
-    "showTitle:boolean",
+    {
+      name: "labelFalse:text",
+      serializationProperty: "locLabelFalse",
+    },
     "valueTrue",
-    "valueFalse"
+    "valueFalse",
+    { name: "swapOrder:boolean", category: "general" },
+    { name: "renderAs", default: "default", visible: false },
   ],
-  function() {
+  function () {
     return new QuestionBooleanModel("");
   },
   "question"
 );
-
-QuestionFactory.Instance.registerQuestion("boolean", name => {
+QuestionFactory.Instance.registerQuestion("boolean", (name) => {
   return new QuestionBooleanModel(name);
 });

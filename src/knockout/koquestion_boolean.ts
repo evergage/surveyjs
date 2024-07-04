@@ -1,32 +1,36 @@
-import * as ko from "knockout";
-import { QuestionBooleanModel } from "../question_boolean";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
+import { Serializer, QuestionFactory, QuestionBooleanModel, getOriginalEvent } from "survey-core";
 import { QuestionImplementor } from "./koquestion";
-import { Question } from "../question";
-
-export class QuestionBooleanImplementor extends QuestionImplementor {
-  constructor(public question: Question) {
-    super(question);
-  }
-}
-
 export class QuestionBoolean extends QuestionBooleanModel {
-  constructor(public name: string) {
+  private _implementor: QuestionImplementor;
+  constructor(name: string) {
     super(name);
-    new QuestionBooleanImplementor(this);
   }
-  public getItemCss(row: any, column: any) {
-    let isChecked = this.checkedValue;
-    let itemClass = (<any>this)["koCss"]().item + (isChecked ? " checked" : "");
-    return itemClass;
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionImplementor(this);
+  }
+  public onSwitchClick(data: any, event: any) {
+    return super.onSwitchClickModel(getOriginalEvent(event));
+  }
+  public onTrueLabelClick(data: any, event: any) {
+    return this.onLabelClick(event, !this.swapOrder);
+  }
+  public onFalseLabelClick(data: any, event: any) {
+    return this.onLabelClick(event, this.swapOrder);
+  }
+  public onKeyDown(data: any, event: any): boolean {
+    return this.onKeyDownCore(event);
+  }
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
-
-Serializer.overrideClassCreator("boolean", function() {
+Serializer.overrideClassCreator("boolean", function () {
   return new QuestionBoolean("");
 });
 
-QuestionFactory.Instance.registerQuestion("boolean", name => {
+QuestionFactory.Instance.registerQuestion("boolean", (name) => {
   return new QuestionBoolean(name);
 });

@@ -1,57 +1,50 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `options`;
+import { frameworks, url, initSurvey } from "../helper";
+import { Selector, ClientFunction, fixture, test } from "testcafe";
+const title = "options";
 
 const change_question_required_text = ClientFunction(() => {
-  survey.requiredText = "😱";
-  survey.render();
+  window["survey"].requiredText = "😱";
+  window["survey"].render();
 });
 
 const set_question_numbers_on_page = ClientFunction(() => {
-  survey.showQuestionNumbers = "onPage";
-  survey.render();
+  window["survey"].showQuestionNumbers = "onPage";
+  window["survey"].render();
 });
 
 const set_question_numbers_off = ClientFunction(() => {
-  survey.showQuestionNumbers = "off";
-  survey.render();
+  window["survey"].showQuestionNumbers = "off";
+  window["survey"].render();
 });
 
 const hide_survey_title = ClientFunction(() => {
-  survey.showTitle = false;
-  survey.render();
+  window["survey"].showTitle = false;
+  window["survey"].render();
 });
 
 const hide_page_title = ClientFunction(() => {
-  survey.showPageTitles = false;
-  survey.render();
+  window["survey"].showPageTitles = false;
+  window["survey"].render();
 });
 
 const show_page_numbers = ClientFunction(() => {
-  survey.showPageNumbers = true;
-  survey.render();
+  window["survey"].showPageNumbers = true;
+  window["survey"].render();
 });
 
 const show_top_progress_bar = ClientFunction(() => {
-  survey.showProgressBar = "top";
-  survey.render();
+  window["survey"].showProgressBar = "top";
+  window["survey"].render();
 });
 
 const show_bottom_progress_bar = ClientFunction(() => {
-  survey.showProgressBar = "bottom";
-  survey.render();
+  window["survey"].showProgressBar = "bottom";
+  window["survey"].render();
 });
 
 const set_completed_html = ClientFunction(() => {
-  survey.completedHtml = "<h1>Wombat</h1>";
-  survey.render();
+  window["survey"].completedHtml = "<h1>Wombat</h1>";
+  window["survey"].render();
 });
 
 const json = {
@@ -131,165 +124,130 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`change question required text`, async t => {
-    const getPosition = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf("😱")
-    );
+  test("change question required text", async t => {
+    const requiredElement = Selector(".sv_q_required_text");
 
+    await t.expect(requiredElement.textContent).eql("*");
     await change_question_required_text();
-
-    assert.notEqual(await getPosition(), -1);
+    await t.expect(requiredElement.textContent).eql("😱");
   });
 
-  test(`set question numbers on page`, async t => {
-    const getPosition = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf(">1</span>")
-    );
+  test("set question numbers on page", async t => {
+    const questionNumber = Selector(".sv_q_num");
 
-    await t.click(`input[type=checkbox]`).click(`input[value="Next"]`);
+    await t
+      .click("input[type=checkbox]")
+      .click("input[value=\"Next\"]")
+      .expect(questionNumber.textContent).eql("2.");
 
     await set_question_numbers_on_page();
-
-    assert.notEqual(await getPosition(), -1);
+    await t.expect(questionNumber.textContent).eql("1.");
   });
 
-  test(`set question numbers off`, async t => {
-    const getPosition = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf(">1</span>")
-    );
+  test("set question numbers off", async t => {
+    const questionNumber = Selector(".sv_q_num");
+    await t.expect(questionNumber.textContent).eql("1.");
 
     await set_question_numbers_off();
-
-    assert.equal(await getPosition(), -1);
+    await t.expect(questionNumber.exists).notOk();
   });
 
-  test(`hide survey title`, async t => {
-    const getTitle = Selector(() => document.querySelectorAll("h3"), {
-      text: "Software developer survey.",
-      visibilityCheck: true,
-      timeout: 1000
-    });
-
+  test("hide survey title", async t => {
+    const surveyTitle = Selector("h3").withText("Software developer survey.");
+    await t.expect(surveyTitle.visible).ok();
     await hide_survey_title();
-
-    assert.equal(await getTitle(), null);
+    await t.expect(surveyTitle.exists).notOk();
   });
 
-  test(`hide page title`, async t => {
-    const getTitle = Selector(() => document.querySelectorAll("h4"), {
-      text: "What operating system do you use?",
-      visibilityCheck: true,
-      timeout: 1000
-    });
-
+  test("hide page title", async t => {
+    const pageTitle = Selector("h4").withText("What operating system do you use?");
+    await t.expect(pageTitle.visible).ok();
     await hide_page_title();
-
-    assert.equal(await getTitle(), null);
+    await t.expect(pageTitle.exists).notOk();
   });
 
-  test(`show page numbers`, async t => {
-    const getPositionPage1 = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf(
-        "1. What operating system do you use?"
-      )
-    );
-    const getPositionPage2 = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf(
-        "2. What language(s) are you currently using?"
-      )
-    );
+  test("show page numbers", async t => {
+    const pageTitle = Selector(".sv_page_title .sv-string-viewer");
 
+    await t.expect(pageTitle.textContent).eql("What operating system do you use?");
     await show_page_numbers();
-    assert.notEqual(await getPositionPage1(), -1);
+    await t
+      .expect(pageTitle.textContent).eql("1. What operating system do you use?")
 
-    await t.click(`input[type=checkbox]`).click(`input[value="Next"]`);
-    assert.notEqual(await getPositionPage2(), -1);
+      .click("input[type=checkbox]")
+      .click("input[value=\"Next\"]")
+      .expect(pageTitle.textContent).eql("2. What language(s) are you currently using?");
   });
 
-  test(`no progress bar`, async t => {
-    const getProgressBar = Selector("span")
-      .withText("Page 1 of 3")
-      .with({ visibilityCheck: true, timeout: 1000 });
-    assert.equal(await getProgressBar(), null);
+  const progressbar = Selector(".sv_progress").filterVisible();
+
+  test("no progress bar", async t => {
+    await t.expect(progressbar.exists).notOk();
   });
 
-  test(`show top progress bar`, async t => {
-    const getProgressBar = Selector(() => document.querySelectorAll("div"), {
-      text: "Page 1 of 3",
-      visibilityCheck: true
-    });
-    const isFirstSpanProgress = ClientFunction(
-      () =>
-        document
-          .querySelector("[role=progressbar] span")
-          .innerHTML.indexOf("Page 1 of 3") !== -1
-    );
+  test("show top progress bar", async t => {
+    let progressSelector = ".sv_container .sv-components-column--expandable > .sv-components-column > div";
+    // if(framework === "vue3") {
+    //   progressSelector = ".sv_container .sv-components-column--expandable > div";
+    // }
+    const progressElement = Selector(progressSelector);
+    await t.expect(progressbar.exists).notOk();
 
     await show_top_progress_bar();
-
-    assert.notEqual(await getProgressBar(), null);
-    assert(await isFirstSpanProgress());
+    await t
+      .expect(progressbar.visible).ok()
+      .expect(progressbar.textContent).contains("Page 1 of 3")
+      .expect(progressElement.classNames).contains("sv_progress");
   });
 
-  test(`show bottom progress bar`, async t => {
-    const getProgressBar = Selector(() => document.querySelectorAll("div"), {
-      text: "Page 1 of 3",
-      visibilityCheck: true
-    });
-    const isLastSpanProgress = ClientFunction(() => {
-      var spans = document.querySelectorAll("span");
-      return spans[spans.length - 1].innerHTML.indexOf("Page 1 of 3") !== -1;
-    });
+  test("show bottom progress bar", async t => {
+    const progressRootElement = Selector(".sv_main > div > form > .sv_container .sv-components-row ~ div");
+    await t.expect(progressbar.exists).notOk();
 
     await show_bottom_progress_bar();
-
-    assert.notEqual(await getProgressBar(), null);
-    assert(await isLastSpanProgress());
+    await t
+      .expect(progressbar.visible).ok()
+      .expect(progressbar.textContent).contains("Page 1 of 3");
+    if(framework === "vue") {
+      await t.expect(progressRootElement.find(".sv_progress").visible).ok();
+    } else {
+      await t.expect(progressRootElement.classNames).contains("sv_progress");
+    }
   });
 
-  test(`check progress bar page 2`, async t => {
-    const getProgressBar = Selector(() => document.querySelectorAll("div"), {
-      text: "Page 2 of 3",
-      visibilityCheck: true
-    });
-
+  test("check progress bar page 2", async t => {
+    await t.expect(progressbar.exists).notOk();
     await show_top_progress_bar();
-    await t.click(`input[type=checkbox]`).click(`input[value="Next"]`);
-
-    assert.notEqual(await getProgressBar(), null);
+    await t
+      .expect(progressbar.visible).ok()
+      .expect(progressbar.textContent).contains("Page 1 of 3")
+      .click("input[type=checkbox]")
+      .click("input[value=\"Next\"]")
+      .expect(progressbar.textContent).contains("Page 2 of 3");
   });
 
-  test(`set completed html`, async t => {
-    const getPosition = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf("Wombat")
-    );
-
+  test("set completed html", async t => {
     await set_completed_html();
     await t
-      .click(`input[type=checkbox]`)
-      .click(`input[value="Next"]`)
-      .click(`input[type=checkbox]`)
-      .click(`input[value="Next"]`)
-      .click(`input[value="Complete"]`);
-
-    assert.notEqual(await getPosition(), -1);
+      .click("input[type=checkbox]")
+      .click("input[value=\"Next\"]")
+      .click("input[type=checkbox]")
+      .click("input[value=\"Next\"]")
+      .click("input[value=\"Complete\"]")
+      .expect(Selector(".sv_completed_page h1").withText("Wombat").visible).ok();
   });
 
-  test(`check previous`, async t => {
-    const getPosition = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf(
-        "What operating system do you use?"
-      )
-    );
+  test("check previous", async t => {
+    const pageTitle = Selector(".sv_page_title .sv-string-viewer");
 
     await t
-      .click(`input[type=checkbox]`)
-      .click(`input[value="Next"]`)
-      .click(`input[type=checkbox]`)
-      .click(`input[value="Next"]`)
-      .click(`input[value="Previous"]`)
-      .click(`input[value="Previous"]`);
+      .click("input[type=checkbox]")
+      .click("input[value=\"Next\"]")
+      .click("input[type=checkbox]")
+      .click("input[value=\"Next\"]")
+      .click("input[value=\"Previous\"]")
+      .click("input[value=\"Previous\"]");
 
-    assert.notEqual(await getPosition(), -1);
+    await t.expect(pageTitle.textContent).eql("What operating system do you use?");
   });
 });

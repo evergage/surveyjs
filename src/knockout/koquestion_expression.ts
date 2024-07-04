@@ -1,26 +1,23 @@
 import * as ko from "knockout";
-import { QuestionExpressionModel } from "../question_expression";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
+import { QuestionExpressionModel } from "survey-core";
+import { Serializer } from "survey-core";
+import { QuestionFactory } from "survey-core";
 import { QuestionImplementor } from "./koquestion";
-import { Question } from "../question";
-
-export class QuestionExpressionImplementor extends QuestionImplementor {
-  koDisplayValue: any;
-  constructor(public question: Question) {
-    super(question);
-    this.koDisplayValue = ko.observable(this.question.displayValue);
-    (<any>this.question)["koDisplayValue"] = this.koDisplayValue;
-    ko.computed(() => {
-      this.koDisplayValue(this.question.displayValue);
-    });
-  }
-}
+import { Question } from "survey-core";
 
 export class QuestionExpression extends QuestionExpressionModel {
-  constructor(public name: string) {
+  private _implementor: QuestionImplementor;
+  constructor(name: string) {
     super(name);
-    new QuestionExpressionImplementor(this);
+  }
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionImplementor(this);
+  }
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 

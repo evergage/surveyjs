@@ -1,44 +1,33 @@
 import * as ko from "knockout";
 import { QuestionImplementor } from "./koquestion";
-import { QuestionRatingModel } from "../question_rating";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
-import { Question } from "../question";
+import {
+  QuestionRatingModel,
+  Serializer,
+  QuestionFactory,
+  Question,
+} from "survey-core";
 
-class QuestionRatingImplementor extends QuestionImplementor {
-  koVisibleRateValues: any;
-  koChange: any;
-  koCss: any;
+export class QuestionRatingImplementor extends QuestionImplementor {
+  protected onCreated() {}
   constructor(question: Question) {
     super(question);
-    this.koVisibleRateValues = ko.observableArray(this.getValues());
-    (<any>this.question)["koVisibleRateValues"] = this.koVisibleRateValues;
-    var self = this;
-    this.koChange = function(val: any) {
-      self.question.value = val.itemValue;
-    };
-    (<any>this.question)["koChange"] = this.koChange;
-    (<QuestionRating>this.question).rateValuesChangedCallback = function() {
-      self.onRateValuesChanged();
-    };
-    (<any>this.question)["koGetCss"] = (val: any) => {
-      var css = self.question.cssClasses.item;
-      var selected = self.question.cssClasses.selected;
-      return this.question.value === val.value ? css + " " + selected : css;
-    };
-  }
-  protected onRateValuesChanged() {
-    this.koVisibleRateValues(this.getValues());
-  }
-  private getValues(): Array<any> {
-    return (<QuestionRating>this.question).visibleRateValues;
+    this.onCreated();
   }
 }
 
 export class QuestionRating extends QuestionRatingModel {
-  constructor(public name: string) {
+  private _implementor: QuestionRatingImplementor;
+  constructor(name: string) {
     super(name);
-    new QuestionRatingImplementor(this);
+  }
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionRatingImplementor(this);
+  }
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 
@@ -46,6 +35,6 @@ Serializer.overrideClassCreator("rating", function() {
   return new QuestionRating("");
 });
 
-QuestionFactory.Instance.registerQuestion("rating", name => {
+QuestionFactory.Instance.registerQuestion("rating", (name) => {
   return new QuestionRating(name);
 });

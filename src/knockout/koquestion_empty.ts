@@ -1,13 +1,22 @@
 import * as ko from "knockout";
-import { QuestionEmptyModel } from "../question_empty";
-import { Serializer } from "../jsonobject";
+import { QuestionEmptyModel } from "survey-core";
+import { Serializer } from "survey-core";
 import { QuestionImplementor } from "./koquestion";
-import { Question } from "../question";
+import { Question } from "survey-core";
 
 export class QuestionEmpty extends QuestionEmptyModel {
-  constructor(public name: string) {
+  private _implementor: QuestionImplementor;
+  constructor(name: string) {
     super(name);
-    new QuestionImplementor(this);
+  }
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionImplementor(this);
+  }
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 

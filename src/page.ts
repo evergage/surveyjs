@@ -1,28 +1,34 @@
-import { Serializer } from "./jsonobject";
-import { HashTable, Helpers } from "./helpers";
+import { property, Serializer } from "./jsonobject";
+import { Helpers } from "./helpers";
 import {
   IPage,
   IPanel,
   IElement,
   ISurveyElement,
   IQuestion,
-  SurveyElement
-} from "./base";
-import { Question } from "./question";
-import { DragDropInfo, PanelModelBase, QuestionRowModel } from "./panel";
+} from "./base-interfaces";
+import { PanelModelBase, QuestionRowModel } from "./panel";
+import { LocalizableString } from "./localizablestring";
+import { CssClassBuilder } from "./utils/cssClassBuilder";
+import { DragDropPageHelperV1 } from "./drag-drop-page-helper-v1";
 
 /**
- * The page object. It has elements collection, that contains questions and panels.
+ * The `PageModel` object describes a survey page and contains properties and methods that allow you to control the page and access its elements (panels and questions).
+ *
+ * [View Demo](https://surveyjs.io/form-library/examples/nps-question/ (linkStyle))
  */
 export class PageModel extends PanelModelBase implements IPage {
   private hasShownValue: boolean = false;
-  constructor(public name: string = "") {
+  private dragDropPageHelper: DragDropPageHelperV1;
+
+  constructor(name: string = "") {
     super(name);
-    var self = this;
-    this.locTitle.onRenderedHtmlCallback = function(text) {
-      if (self.num > 0) return self.num + ". " + text;
+    this.locTitle.onGetTextCallback = (text: string) => {
+      if (this.canShowPageNumber() && text) return this.num + ". " + text;
       return text;
     };
+    this.createLocalizableString("navigationDescription", this, true);
+    this.dragDropPageHelper = new DragDropPageHelperV1(this);
   }
   public getType(): string {
     return "page";
@@ -30,10 +36,57 @@ export class PageModel extends PanelModelBase implements IPage {
   public toString(): string {
     return this.name;
   }
-  public get isPage() {
+  public get isPage(): boolean {
     return true;
   }
-  public onFirstRendering() {
+  protected canShowPageNumber(): boolean {
+    return this.survey && (<any>this.survey).showPageNumbers;
+  }
+  protected canShowTitle(): boolean {
+    return this.survey && (<any>this.survey).showPageTitles;
+  }
+  /**
+   * A caption displayed on a navigation button in the TOC or progress bar. Applies when [`showTOC`](https://surveyjs.io/form-library/documentation/api-reference/survey-data-model#showTOC) is `true` or when the [progress bar is visible](https://surveyjs.io/form-library/documentation/api-reference/survey-data-model#showProgressBar), [`progressBarType`](https://surveyjs.io/form-library/documentation/surveymodel#progressBarType) is set to `"pages"`, and [`progressBarShowPageTitles`](https://surveyjs.io/form-library/documentation/surveymodel#progressBarShowPageTitles) is `true`.
+   *
+   * If navigation titles are unspecified, the navigation buttons display page [titles](https://surveyjs.io/form-library/documentation/api-reference/page-model#title) or [names](https://surveyjs.io/form-library/documentation/pagemodel#name).
+   */
+  public get navigationTitle(): string {
+    return this.getLocalizableStringText("navigationTitle");
+  }
+  public set navigationTitle(val: string) {
+    this.setLocalizableStringText("navigationTitle", val);
+  }
+  /**
+   * Explanatory text displayed under a navigation button in the progress bar. Applies when the [progress bar is visible](https://surveyjs.io/form-library/documentation/api-reference/survey-data-model#showProgressBar), `SurveyModel`'s [`progressBarType`](https://surveyjs.io/form-library/documentation/surveymodel#progressBarType) is set to `"pages"`, and [`progressBarShowPageTitles`](https://surveyjs.io/form-library/documentation/surveymodel#progressBarShowPageTitles) is `true`.
+   */
+  public get navigationDescription(): string {
+    return this.getLocalizableStringText("navigationDescription");
+  }
+  public set navigationDescription(val: string) {
+    this.setLocalizableStringText("navigationDescription", val);
+  }
+  public get locNavigationDescription(): LocalizableString {
+    return this.getLocalizableString("navigationDescription");
+  }
+  public navigationLocStrChanged(): void {
+    if(this.locNavigationTitle.isEmpty) {
+      this.locTitle.strChanged();
+    }
+    this.locNavigationTitle.strChanged();
+    this.locNavigationDescription.strChanged();
+  }
+  public get passed(): boolean {
+    return this.getPropertyValue("passed", false);
+  }
+  public set passed(val: boolean) {
+    this.setPropertyValue("passed", val);
+  }
+  protected removeFromParent(): void {
+    if (!!this.survey) {
+      this.removeSelfFromList(this.survey.pages);
+    }
+  }
+  public onFirstRendering(): void {
     if (this.wasShown) return;
     super.onFirstRendering();
   }
@@ -48,36 +101,93 @@ export class PageModel extends PanelModelBase implements IPage {
   public set visibleIndex(val: number) {
     this.setPropertyValue("visibleIndex", val);
   }
+  protected canRenderFirstRows(): boolean {
+    return !this.isDesignMode || this.visibleIndex == 0;
+  }
   /**
-   * Returns true, if the page is started page in the survey. It can be shown on the start only and the end-user could not comeback to it after it passed it.
+   * Returns `true` if this page is a start page.
+   *
+   * Refer to the following help topic for more information on how to configure a start page: [Start Page](https://surveyjs.io/form-library/documentation/design-survey-create-a-multi-page-survey#start-page).
    */
-  public get isStarted(): boolean {
+  public get isStartPage(): boolean {
     return this.survey && this.survey.isPageStarted(this);
   }
-  getIsPageVisible(exceptionQuestion: IQuestion): boolean {
-    if (this.isStarted) return false;
-    return super.getIsPageVisible(exceptionQuestion);
+  public get isStarted(): boolean { return this.isStartPage; }
+  protected calcCssClasses(css: any): any {
+    const classes = { page: {}, error: {}, pageTitle: "", pageDescription: "", row: "", rowMultiple: "", pageRow: "", rowCompact: "", rowFadeIn: "", rowFadeOut: "", rowDelayedFadeIn: "" };
+    this.copyCssClasses(classes.page, css.page);
+    this.copyCssClasses(classes.error, css.error);
+    if (!!css.pageTitle) {
+      classes.pageTitle = css.pageTitle;
+    }
+    if (!!css.pageDescription) {
+      classes.pageDescription = css.pageDescription;
+    }
+    if (!!css.row) {
+      classes.row = css.row;
+    }
+    if (!!css.pageRow) {
+      classes.pageRow = css.pageRow;
+    }
+    if (!!css.rowMultiple) {
+      classes.rowMultiple = css.rowMultiple;
+    }
+    if (!!css.rowCompact) {
+      classes.rowCompact = css.rowCompact;
+    }
+    if (!!css.rowFadeIn) {
+      classes.rowFadeIn = css.rowFadeIn;
+    }
+    if (!!css.rowDelayedFadeIn) {
+      classes.rowDelayedFadeIn = css.rowDelayedFadeIn;
+    }
+    if (!!css.rowFadeOut) {
+      classes.rowFadeOut = css.rowFadeOut;
+    }
+    if (this.survey) {
+      this.survey.updatePageCssClasses(this, classes);
+    }
+    return classes;
   }
-  public get num() {
-    return this.getPropertyValue("num", -1);
+  public get cssTitle(): string {
+    if(!this.cssClasses.page) return "";
+    return new CssClassBuilder()
+      .append(this.cssClasses.page.title)
+      .toString();
   }
-  public set num(val: number) {
-    if (this.num == val) return;
-    this.setPropertyValue("num", val);
-    this.onNumChanged(val);
+  public get cssRoot(): string {
+    if(!this.cssClasses.page || !this.survey) return "";
+    return new CssClassBuilder()
+      .append(this.cssClasses.page.root)
+      .append(this.cssClasses.page.emptyHeaderRoot, !(<any>this.survey).renderedHasHeader &&
+        !((<any>this.survey).isShowProgressBarOnTop && !(<any>this.survey).isStaring))
+      .toString();
   }
+  protected getCssError(cssClasses: any): string {
+    return new CssClassBuilder()
+      .append(super.getCssError(cssClasses))
+      .append(cssClasses.page.errorsContainer).toString();
+  }
+  @property({ defaultValue: -1, onSet: (val: number, target: PageModel) => target.onNumChanged(val) }) num: number;
   /**
    * Set this property to "hide" to make "Prev", "Next" and "Complete" buttons are invisible for this page. Set this property to "show" to make these buttons visible, even if survey showNavigationButtons property is false.
    * @see SurveyMode.showNavigationButtons
    */
   public get navigationButtonsVisibility(): string {
-    return this.getPropertyValue("navigationButtonsVisibility", "inherit");
+    return this.getPropertyValue("navigationButtonsVisibility");
   }
   public set navigationButtonsVisibility(val: string) {
     this.setPropertyValue("navigationButtonsVisibility", val.toLowerCase());
   }
   /**
-   * The property returns true, if the page has been shown to the end-user.
+   * Returns `true` if this is the current page.
+   * @see SurveyModel.currentPage
+   */
+  public get isActive(): boolean {
+    return !!this.survey && <PageModel>this.survey.currentPage === this;
+  }
+  /**
+   * Returns `true` if the respondent has already seen this page during the current session.
    */
   public get wasShown(): boolean {
     return this.hasShownValue;
@@ -88,77 +198,26 @@ export class PageModel extends PanelModelBase implements IPage {
   public setWasShown(val: boolean) {
     if (val == this.hasShownValue) return;
     this.hasShownValue = val;
-    if (this.isDesignMode) return;
-    if (val == true && this.areQuestionsRandomized) {
-      this.randomizeElements();
+    if (this.isDesignMode || val !== true) return;
+    var els = this.elements;
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].isPanel) {
+        (<PanelModelBase><any>els[i]).randomizeElements(this.areQuestionsRandomized);
+      }
     }
-  }
-  private isRandomizing = false;
-  private randomizeElements() {
-    if (this.isRandomizing) return;
-    this.isRandomizing = true;
-    var oldElements = [];
-    var elements = this.elements;
-    for (var i = 0; i < elements.length; i++) {
-      oldElements.push(elements[i]);
-    }
-    var newElements = Helpers.randomizeArray<IElement>(oldElements);
-    this.elements.splice(0, this.elements.length);
-    for (var i = 0; i < newElements.length; i++) {
-      this.elements.push(newElements[i]);
-    }
-    this.isRandomizing = false;
+    this.randomizeElements(this.areQuestionsRandomized);
   }
   /**
-   * The property returns true, if the elements are randomized on the page
-   * @see hasShown
-   * @see questionsOrder
-   * @see SurveyModel.questionsOrder
-   */
-  public get areQuestionsRandomized(): boolean {
-    var order =
-      this.questionsOrder == "default" && this.survey
-        ? this.survey.questionsOrder
-        : this.questionsOrder;
-    return order == "random";
-  }
-  /**
-   * Use this property to randomize questions. Set it to 'random' to randomize questions, 'initial' to keep them in the same order or 'default' to use the Survey questionsOrder property
-   * @see SurveyModel.questionsOrder
-   * @see areQuestionsRandomized
-   */
-  public get questionsOrder() {
-    return this.getPropertyValue("questionsOrder", "default");
-  }
-  public set questionsOrder(val: string) {
-    this.setPropertyValue("questionsOrder", val);
-  }
-  /**
-   * Call it to focus the input on the first question
-   */
-  public focusFirstQuestion() {
-    var q = this.getFirstQuestionToFocus();
-    if (!!q) {
-      q.focus();
-    }
-  }
-  /**
-   * Call it to focus the input of the first question that has an error.
-   */
-  public focusFirstErrorQuestion() {
-    var q = this.getFirstQuestionToFocus(true);
-    if (!!q) {
-      q.focus();
-    }
-  }
-  /**
-   * Call it to scroll to the page top.
+   * Scrolls this page to the top.
    */
   public scrollToTop() {
-    SurveyElement.ScrollElementToTop(this.id);
+    if (!!this.survey) {
+      this.survey.scrollElementToTop(this, null, this, this.id);
+    }
   }
   /**
-   * Time in seconds end-user spent on this page
+   * A time period that a respondent has spent on this page so far; measured in seconds. Applies only to [quiz surveys](https://surveyjs.io/form-library/documentation/design-survey-create-a-quiz).
+   * @see maxTimeToFinish
    */
   public timeSpent = 0;
   // public get timeSpent(): number {
@@ -168,9 +227,11 @@ export class PageModel extends PanelModelBase implements IPage {
   //   this.setPropertyValue("timeSpent", val);
   // }
   /**
-   * Returns the list of all panels in the page
+   * Returns a list of all panels on this page.
+   * @param visibleOnly A Boolean value that specifies whether to include only visible panels.
+   * @param includingDesignTime For internal use.
    */
-  public getPanels(
+  public getAllPanels(
     visibleOnly: boolean = false,
     includingDesignTime: boolean = false
   ): Array<IPanel> {
@@ -178,10 +239,16 @@ export class PageModel extends PanelModelBase implements IPage {
     this.addPanelsIntoList(result, visibleOnly, includingDesignTime);
     return result;
   }
+  public getPanels(visibleOnly: boolean = false, includingDesignTime: boolean = false): Array<IPanel> {
+    return this.getAllPanels(visibleOnly, includingDesignTime);
+  }
   /**
-   * The maximum time in seconds that end-user has to complete the page. If the value is 0 or less, the end-user has unlimited number of time to finish the page.
-   * @see startTimer
-   * @see SurveyModel.maxTimeToFinishPage
+   * A time period that a respondent has to complete this page; measured in seconds. Applies only to [quiz surveys](https://surveyjs.io/form-library/documentation/design-survey-create-a-quiz).
+   *
+   * A negative value or 0 sets an unlimited time period.
+   *
+   * Alternatively, you can use the `SurveyModel`'s [`maxTimeToFinishPage`](https://surveyjs.io/form-library/documentation/surveymodel#maxTimeToFinishPage) property to specify identical time periods for all survey pages.
+   * @see timeSpent
    */
   public get maxTimeToFinish(): number {
     return this.getPropertyValue("maxTimeToFinish", 0);
@@ -189,7 +256,7 @@ export class PageModel extends PanelModelBase implements IPage {
   public set maxTimeToFinish(val: number) {
     this.setPropertyValue("maxTimeToFinish", val);
   }
-  protected onNumChanged(value: number) {}
+  protected onNumChanged(value: number) { }
   protected onVisibleChanged() {
     if (this.isRandomizing) return;
     super.onVisibleChanged();
@@ -197,174 +264,28 @@ export class PageModel extends PanelModelBase implements IPage {
       this.survey.pageVisibilityChanged(this, this.isVisible);
     }
   }
-  private dragDropInfo: DragDropInfo;
+  public getDragDropInfo(): any { return this.dragDropPageHelper.getDragDropInfo(); }
   public dragDropStart(
     src: IElement,
     target: IElement,
     nestedPanelDepth: number = -1
-  ) {
-    this.dragDropInfo = new DragDropInfo(src, target, nestedPanelDepth);
+  ): void {
+    this.dragDropPageHelper.dragDropStart(src, target, nestedPanelDepth);
   }
   public dragDropMoveTo(
     destination: ISurveyElement,
     isBottom: boolean = false,
     isEdge: boolean = false
   ): boolean {
-    if (!this.dragDropInfo) return false;
-    this.dragDropInfo.destination = destination;
-    this.dragDropInfo.isBottom = isBottom;
-    this.dragDropInfo.isEdge = isEdge;
-    this.correctDragDropInfo(this.dragDropInfo);
-    if (!this.dragDropCanDropTagert()) return false;
-    if (!this.dragDropCanDropSource() || !this.dragDropAllowFromSurvey()) {
-      if (!!this.dragDropInfo.source) {
-        var row = this.dragDropFindRow(this.dragDropInfo.target);
-        this.updateRowsRemoveElementFromRow(this.dragDropInfo.target, row);
-      }
-      return false;
-    }
-    this.dragDropAddTarget(this.dragDropInfo);
-    return true;
-  }
-  private correctDragDropInfo(dragDropInfo: DragDropInfo) {
-    if (!dragDropInfo.destination) return;
-    var panel = (<IElement>dragDropInfo.destination).isPanel
-      ? <IPanel>(<any>dragDropInfo.destination)
-      : null;
-    if (!panel) return;
-    if (
-      !dragDropInfo.target.isLayoutTypeSupported(panel.getChildrenLayoutType())
-    ) {
-      dragDropInfo.isEdge = true;
-    }
-  }
-  private dragDropAllowFromSurvey(): boolean {
-    var dest = this.dragDropInfo.destination;
-    if (!dest || !this.survey) return true;
-    var insertBefore: IElement = null;
-    var insertAfter: IElement = null;
-    var parent =
-      dest.isPage || (!this.dragDropInfo.isEdge && (<IElement>dest).isPanel)
-        ? dest
-        : (<IElement>dest).parent;
-    if (!dest.isPage) {
-      var container = (<IElement>dest).parent;
-      if (!!container) {
-        var elements = (<PanelModelBase>container).elements;
-        var index = elements.indexOf(<IElement>dest);
-        if (index > -1) {
-          insertBefore = <IElement>dest;
-          insertAfter = <IElement>dest;
-          if (this.dragDropInfo.isBottom) {
-            insertBefore =
-              index < elements.length - 1 ? elements[index + 1] : null;
-          } else {
-            insertAfter = index > 0 ? elements[index - 1] : null;
-          }
-        }
-      }
-    }
-    var options = {
-      target: this.dragDropInfo.target,
-      source: this.dragDropInfo.source,
-      parent: parent,
-      insertAfter: insertAfter,
-      insertBefore: insertBefore
-    };
-    return this.survey.dragAndDropAllow(options);
+    return this.dragDropPageHelper.dragDropMoveTo(destination, isBottom, isEdge);
   }
   public dragDropFinish(isCancel: boolean = false): IElement {
-    if (!this.dragDropInfo) return;
-    var target = this.dragDropInfo.target;
-    var row = this.dragDropFindRow(target);
-    var targetIndex = this.dragDropGetElementIndex(target, row);
-    this.updateRowsRemoveElementFromRow(target, row);
-    if (!isCancel && !!row) {
-      var src = this.dragDropInfo.source;
-      var isSamePanel = false;
-      if (!!src && !!src.parent) {
-        isSamePanel = row.panel == src.parent;
-        if (isSamePanel) {
-          row.panel.dragDropMoveElement(src, target, targetIndex);
-          targetIndex = -1;
-        } else {
-          src.parent.removeElement(src);
-        }
-      }
-      if (targetIndex > -1) {
-        row.panel.addElement(target, targetIndex);
-      }
-    }
-    this.dragDropInfo = null;
-    return !isCancel ? target : null;
-  }
-  private dragDropGetElementIndex(
-    target: IElement,
-    row: QuestionRowModel
-  ): number {
-    if (!row) return -1;
-    var index = row.elements.indexOf(target);
-    if (row.index == 0) return index;
-    var prevRow = row.panel.rows[row.index - 1];
-    var prevElement = prevRow.elements[prevRow.elements.length - 1];
-    return index + row.panel.elements.indexOf(prevElement) + 1;
-  }
-  private dragDropCanDropTagert(): boolean {
-    var destination = this.dragDropInfo.destination;
-    if (!destination || destination.isPage) return true;
-    return this.dragDropCanDropCore(
-      this.dragDropInfo.target,
-      <IElement>destination
-    );
-  }
-  private dragDropCanDropSource(): boolean {
-    var source = this.dragDropInfo.source;
-    if (!source) return true;
-    var destination = <IElement>this.dragDropInfo.destination;
-    if (!this.dragDropCanDropCore(source, destination)) return false;
-    return this.dragDropCanDropNotNext(
-      source,
-      destination,
-      this.dragDropInfo.isEdge,
-      this.dragDropInfo.isBottom
-    );
-  }
-  private dragDropCanDropCore(
-    target: IElement,
-    destination: IElement
-  ): boolean {
-    if (!destination) return true;
-    if (this.dragDropIsSameElement(destination, target)) return false;
-    if (target.isPanel) {
-      var pnl = <PanelModelBase>(<any>target);
-      if (
-        pnl.containsElement(destination) ||
-        !!pnl.getElementByName(destination.name)
-      )
-        return false;
-    }
-    return true;
-  }
-  private dragDropCanDropNotNext(
-    source: IElement,
-    destination: IElement,
-    isEdge: boolean,
-    isBottom: boolean
-  ): boolean {
-    if (!destination || (destination.isPanel && !isEdge)) return true;
-    if (source.parent !== destination.parent) return true;
-    var pnl = <PanelModelBase>source.parent;
-    var srcIndex = pnl.elements.indexOf(source);
-    var destIndex = pnl.elements.indexOf(destination);
-    if (destIndex < srcIndex && !isBottom) destIndex--;
-    if (isBottom) destIndex++;
-    return srcIndex < destIndex
-      ? destIndex - srcIndex > 1
-      : srcIndex - destIndex > 0;
+    return this.dragDropPageHelper.dragDropFinish(isCancel);
   }
 
-  private dragDropIsSameElement(el1: IElement, el2: IElement) {
-    return el1 == el2 || el1.name == el2.name;
+  public ensureRowsVisibility() {
+    super.ensureRowsVisibility();
+    this.getPanels().forEach((panel) => panel.ensureRowsVisibility());
   }
 }
 
@@ -374,16 +295,27 @@ Serializer.addClass(
     {
       name: "navigationButtonsVisibility",
       default: "inherit",
-      choices: ["inherit", "show", "hide"]
+      choices: ["inherit", "show", "hide"],
+    },
+    { name: "maxTimeToFinish:number", default: 0, minValue: 0 },
+    {
+      name: "navigationTitle",
+      visibleIf: function (obj: any) {
+        return !!obj.survey && (obj.survey.progressBarType === "buttons" || obj.survey.showTOC);
+      },
+      serializationProperty: "locNavigationTitle",
     },
     {
-      name: "questionsOrder",
-      default: "default",
-      choices: ["default", "initial", "random"]
+      name: "navigationDescription",
+      visibleIf: function (obj: any) {
+        return !!obj.survey && obj.survey.progressBarType === "buttons";
+      },
+      serializationProperty: "locNavigationDescription",
     },
-    { name: "maxTimeToFinish:number", default: 0 }
+    { name: "title:text", serializationProperty: "locTitle" },
+    { name: "description:text", serializationProperty: "locDescription" },
   ],
-  function() {
+  function () {
     return new PageModel();
   },
   "panelbase"

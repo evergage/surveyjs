@@ -1,7 +1,7 @@
 // TODO this example disable, uncomment for enable
 
 /*
-import {frameworks, url, setOptions, initSurvey, getSurveyResult} from "../settings";
+import {frameworks, url, setOptions, initSurvey, getSurveyResult} from "../helper";
 import {Selector, ClientFunction} from 'testcafe';
 const assert = require('assert');
 const title = `changeRendering`;
@@ -29,7 +29,7 @@ const setupSurvey = ClientFunction((framework) => {
         new Survey.SurveyTemplateText().replaceText('<div class="btn-group"><!-- ko foreach: { data: question.visibleChoices, as: "item", afterRender: question.koAfterRender}  --> <label class="btn btn-default" data-bind="css:{active: question.value.indexOf($data.value) > -1}, style:{width: question.koWidth}">   <input style="display:none;" type="checkbox" data-bind="attr: {name: question.name, value: item.value}, checked: question.value" /> <span data-bind="text: item.text"></span></label><!-- /ko --><div data-bind="visible:question.hasOther"><div data-bind="template: { name: \'survey-comment\', data: {\'question\': question, \'visible\': question.isOtherSelected } }"></div></div></div>', "question", "checkbox");
 
         survey.onComplete.add(function() {
-            window.SurveyResult = survey.data;
+            window["SurveyResult"] = survey.data;
         });
 
         survey.render();
@@ -195,18 +195,12 @@ const setupSurvey = ClientFunction((framework) => {
 
     const setupAngular = function() {};
 
-    const setupJquery = function() {};
-
     if (framework === "knockout") {
         setupKnockout();
     } else if (framework === "react") {
         setupReact();
     } else if (framework === "vue") {
         setupVue();
-    } else if (framework === "angular") {
-        setupAngular();
-    } else if (framework === "jquery") {
-        setupJquery();
     }
 });
 
@@ -260,7 +254,7 @@ frameworks.forEach( (framework) => {
                 .click(`input[value=Complete]`);
 
             surveyResult = await getSurveyResult();
-            assert.deepEqual(surveyResult, {
+            await t.expect(surveyResult).eql({
                 "frameworkUsing":"Yes",
                 "framework":["Bootstrap"],
                 "mvvmUsing":"No"

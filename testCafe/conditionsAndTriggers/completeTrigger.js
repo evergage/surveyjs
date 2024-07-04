@@ -1,13 +1,6 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `completeTrigger`;
+import { frameworks, url, initSurvey, getSurveyResult } from "../helper";
+import { Selector, fixture, test } from "testcafe";
+const title = "completeTrigger";
 
 const json = {
   triggers: [
@@ -101,23 +94,33 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`check visibility`, async t => {
-    const getPosition = ClientFunction(index =>
-      document.documentElement.innerHTML.indexOf(
-        "4. Do you want to finish the survey?"
-      )
-    );
-    let surveyResult;
-
-    assert.equal(await getPosition(), -1);
-
+  test("check visibility", async t => {
     await t
-      .click(`input[value="No"]`)
-      .click(`input[value="Next"]`)
-      .click(`input[value="Yes"]`)
-      .click(`input[value="Next"]`);
+      .expect(Selector(".sv-string-viewer").withText("4. Do you want to finish the survey?").exists).notOk()
+      .click("input[value=\"No\"]")
+      .click("input[value=\"Next\"]")
+      .click("input[value=\"Yes\"]")
+      .click("input[value=\"Complete\"]");
 
-    surveyResult = await getSurveyResult();
-    assert.deepEqual(surveyResult, { exit1: "No", exit2: "Yes" });
+    const surveyResult = await getSurveyResult();
+    await t.expect(surveyResult).eql({ exit1: "No", exit2: "Yes" });
+  });
+  test("check complete and next buttons visibility", async t => {
+    const nextSelector = Selector("input[value=\"Next\"]").filterVisible();
+    const completeSelector = Selector("input[value=\"Complete\"]").filterVisible();
+    await t
+      .expect(nextSelector.exists).ok()
+      .expect(completeSelector.exists).notOk()
+      .click("input[value=\"Yes\"]")
+      .expect(nextSelector.exists).notOk()
+      .expect(completeSelector.exists).ok()
+      .click("input[value=\"No\"]")
+      .expect(nextSelector.exists).ok()
+      .expect(completeSelector.exists).notOk()
+      .click("input[value=\"Yes\"]")
+      .click("input[value=\"Complete\"]");
+
+    const surveyResult = await getSurveyResult();
+    await t.expect(surveyResult).eql({ exit1: "Yes" });
   });
 });

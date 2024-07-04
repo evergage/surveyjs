@@ -1,13 +1,6 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `setValueTrigger`;
+import { frameworks, url, initSurvey, getSurveyResult } from "../helper";
+import { Selector, fixture, test } from "testcafe";
+const title = "setValueTrigger";
 
 const json = {
   triggers: [
@@ -17,7 +10,7 @@ const json = {
       operator: "equal",
       value: "Yes",
       setToName: "name",
-      setValue: "Jon Snow"
+      setValue: "Jon Snow",
     },
     {
       type: "setvalue",
@@ -25,7 +18,7 @@ const json = {
       operator: "equal",
       value: "Yes",
       setToName: "email",
-      setValue: "jon.snow@nightwatch.com"
+      setValue: "jon.snow@nightwatch.com",
     },
     {
       type: "setvalue",
@@ -34,7 +27,7 @@ const json = {
       value: "Yes",
       setToName: "tempvar",
       isVariable: true,
-      setValue: "You have decided to use your current information."
+      setValue: "You have decided to use your current information.",
     },
     {
       type: "setvalue",
@@ -42,7 +35,7 @@ const json = {
       operator: "equal",
       value: "No",
       setToName: "name",
-      setValue: ""
+      setValue: "",
     },
     {
       type: "setvalue",
@@ -50,7 +43,7 @@ const json = {
       operator: "equal",
       value: "No",
       setToName: "email",
-      setValue: ""
+      setValue: "",
     },
     {
       type: "setvalue",
@@ -59,8 +52,8 @@ const json = {
       value: "No",
       setToName: "tempvar",
       isVariable: true,
-      setValue: "You have decided not to use your current information."
-    }
+      setValue: "You have decided not to use your current information.",
+    },
   ],
   pages: [
     {
@@ -72,7 +65,7 @@ const json = {
           title: "Use your current data",
           choices: ["Yes", "No"],
           isRequired: true,
-          colCount: 0
+          colCount: 0,
         },
         { type: "text", name: "name", title: "Name:", isRequired: true },
         {
@@ -80,37 +73,33 @@ const json = {
           name: "email",
           title: "Your e-mail",
           isRequired: true,
-          validators: [{ type: "email" }]
-        }
-      ]
-    }
+          validators: [{ type: "email" }],
+        },
+      ],
+    },
   ],
   completedHtml:
-    "<p><h4>Thank you for sharing this information with us.</h4></p><p>Your name is: <b>{name}</b></p><p>Your email is: <b>{email}</b></p><p>This information is not in the survey data result:<b> {tempvar}</b></p>"
+    "<p><h4>Thank you for sharing this information with us.</h4></p><p>Your name is: <b>{name}</b></p><p>Your email is: <b>{email}</b></p><p>This information is not in the survey data result:<b> {tempvar}</b></p>",
 };
 
-frameworks.forEach(framework => {
+frameworks.forEach((framework) => {
   fixture`${framework} ${title}`.page`${url}${framework}`.beforeEach(
-    async t => {
+    async (t) => {
       await initSurvey(framework, json);
     }
   );
 
-  test(`check visibility`, async t => {
-    const getPosition = ClientFunction(index =>
-      document.documentElement.innerHTML.indexOf("Jon Snow")
-    );
-    let surveyResult;
+  test("check visibility", async (t) => {
+    await t
+      .click("input[value=\"Yes\"]")
+      .click("input[value=\"Complete\"]")
+      .expect(Selector(".sv_completed_page").textContent).contains("Jon Snow");
 
-    await t.click(`input[value="Yes"]`).click(`input[value="Complete"]`);
-
-    assert.notEqual(await getPosition());
-
-    surveyResult = await getSurveyResult();
-    assert.deepEqual(surveyResult, {
+    const surveyResult = await getSurveyResult();
+    await t.expect(surveyResult).eql({
       copy: "Yes",
       name: "Jon Snow",
-      email: "jon.snow@nightwatch.com"
+      email: "jon.snow@nightwatch.com",
     });
   });
 });

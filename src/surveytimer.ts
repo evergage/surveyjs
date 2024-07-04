@@ -1,11 +1,19 @@
 import { Event } from "./base";
 
 export var surveyTimerFunctions = {
-  setTimeout: function(func: () => any): number {
-    return window.setTimeout(func, 1000);
+  setTimeout: (func: () => any): number => {
+    return surveyTimerFunctions.safeTimeOut(func, 1000);
   },
-  clearTimeout: function(timerId: number) {
-    window.clearTimeout(timerId);
+  clearTimeout: (timerId: number): void => {
+    clearTimeout(timerId);
+  },
+  safeTimeOut: (func:() => any, delay: number): number | any => {
+    if (delay <= 0) {
+      func();
+      return 0;
+    } else {
+      return setTimeout(func, delay);
+    }
   }
 };
 
@@ -19,7 +27,7 @@ export class SurveyTimer {
   }
   private listenerCounter = 0;
   private timerId = -1;
-  public onTimer: Event<() => any, any> = new Event<() => any, any>();
+  public onTimer: Event<() => any, SurveyTimer, any> = new Event<() => any, SurveyTimer, any>();
   public start(func: () => any = null) {
     if (func) {
       this.onTimer.add(func);
@@ -42,8 +50,15 @@ export class SurveyTimer {
     }
   }
   public doTimer() {
+    if(this.onTimer.isEmpty || this.listenerCounter == 0) {
+      this.timerId = -1;
+    }
     if (this.timerId < 0) return;
+    const prevItem = this.timerId;
     this.onTimer.fire(this, {});
+    //We have to check that we have the same timerId
+    //It could be changed during events execution and it will lead to double timer events
+    if(prevItem !== this.timerId) return;
     this.timerId = surveyTimerFunctions.setTimeout(() => {
       this.doTimer();
     });

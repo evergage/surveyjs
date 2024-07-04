@@ -1,14 +1,6 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  addExternalDependencies,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `sortablejs`;
+import { fixture, test } from "testcafe";
+import { frameworks, url_test, initSurvey, checkSurveyWithEmptyQuestion } from "../helper";
+const title = "sortablejs";
 
 const json = {
   questions: [
@@ -18,43 +10,33 @@ const json = {
       title: "Life Priorities ",
       isRequired: true,
       colCount: 0,
-      choices: ["family", "work", "pets", "travels", "games"]
-    }
-  ]
+      choices: ["family", "work", "pets", "travels", "games"],
+    },
+  ],
 };
 
-frameworks.forEach(framework => {
+frameworks.forEach((framework) => {
   fixture`${framework} ${title}`
-    .page`${url}${framework}/customWidget.html`.beforeEach(async ctx => {
-    await initSurvey(framework, json, "bootstrap");
-  });
+    .page`${url_test}customWidget/${framework}`.beforeEach(
+    async (ctx) => {
+      await initSurvey(framework, json);
+    }
+  );
 
-  test(`check integrity`, async t => {
+  test("check integrity", async (t) => {
     await t
-      .hover(`div[data-value]:nth-child(1)`)
-      .hover(`div[data-value]:nth-child(2)`)
-      .hover(`div[data-value]:nth-child(3)`)
-      .hover(`div[data-value]:nth-child(4)`)
-      .hover(`div[data-value]:nth-child(5)`);
+      .hover("div[data-value]:nth-child(1)")
+      .hover("div[data-value]:nth-child(2)")
+      .hover("div[data-value]:nth-child(3)")
+      .hover("div[data-value]:nth-child(4)")
+      .hover("div[data-value]:nth-child(5)");
   });
 
-  test(`choose empty`, async t => {
-    const getPosition = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf("Please answer the question")
-    );
-    let position;
-    let surveyResult;
-
-    await t.click(`input[value=Complete]`);
-
-    position = await getPosition();
-    assert.notEqual(position, -1);
-
-    surveyResult = await getSurveyResult();
-    assert.equal(typeof surveyResult, `undefined`);
+  test("choose empty", async (t) => {
+    await checkSurveyWithEmptyQuestion(t);
   });
 
-  test(`choose value`, async t => {
+  test("choose value", async (t) => {
     // TODO d&d doesn't work https://github.com/DevExpress/testcafe/issues/897
     // let surveyResult;
     //
@@ -67,7 +49,7 @@ frameworks.forEach(framework => {
     // assert.deepEqual(surveyResult.lifepriopity, ["travels","family"]);
   });
 
-  test(`change priority`, async t => {
+  test("change priority", async (t) => {
     // TODO d&d doesn't work https://github.com/DevExpress/testcafe/issues/897
     // let surveyResult;
     //

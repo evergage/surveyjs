@@ -1,218 +1,196 @@
 import * as React from "react";
-import { ReactSurveyModel } from "./reactsurveymodel";
+import { Base, Question, PageModel, SurveyError, StylesManager, surveyCss, Helpers, doKey2ClickUp, SvgRegistry, SurveyModel, doKey2ClickBlur, doKey2ClickDown, IAttachKey2clickOptions } from "survey-core";
 import { SurveyPage } from "./page";
-import { SurveyNavigation } from "./reactSurveyNavigation";
-import { SurveyError } from "../base";
-import { Question } from "../question";
 import { ISurveyCreator } from "./reactquestion";
-import { ReactQuestionFactory } from "./reactquestionfactory";
-import { surveyCss } from "../defaultCss/cssstandard";
-import { SurveyProgress } from "./reactSurveyProgress";
-import { SurveyTimerPanel } from "./reacttimerpanel";
-import { SurveyElementBase, SurveyLocString } from "./reactquestionelement";
-import { PageModel } from "../page";
+import { SurveyElementBase } from "./reactquestion_element";
+import { SurveyLocStringViewer } from "./string-viewer";
+import { SurveyHeader } from "./components/survey-header/survey-header";
+import { ReactQuestionFactory } from "./reactquestion_factory";
+import { ReactElementFactory } from "./element-factory";
+import { BrandInfo } from "./components/brand-info";
+import { NotifierComponent } from "./components/notifier";
+import { ComponentsContainer } from "./components/components-container";
+import { SvgBundleComponent } from "./svgbundle";
 
-export class Survey extends SurveyElementBase implements ISurveyCreator {
+export class Survey extends SurveyElementBase<any, any>
+  implements ISurveyCreator {
+  private previousJSON = {};
+  private rootRef: React.RefObject<HTMLDivElement>;
   public static get cssType(): string {
     return surveyCss.currentType;
   }
   public static set cssType(value: string) {
-    surveyCss.currentType = value;
+    StylesManager.applyTheme(value);
   }
-  protected survey: ReactSurveyModel;
-  private isCurrentPageChanged: boolean = false;
-  private onCurrentPageChangedHandler = (sender: any, options: any): any => {
-    this.isCurrentPageChanged = true;
-  };
+  protected survey: SurveyModel;
+
+  private rootNodeId: string; // root dom node ID attr
+  private rootNodeClassName: string; // root dom node class
 
   constructor(props: any) {
     super(props);
-    this.handleTryAgainClick = this.handleTryAgainClick.bind(this);
-    this.state = this.getState();
-    this.updateSurvey(props, null);
+    this.createSurvey(props);
+    this.updateSurvey(props, {});
+    this.rootRef = React.createRef();
+    this.rootNodeId = props.id || null;
+    this.rootNodeClassName = props.className || "";
   }
-  componentWillReceiveProps(nextProps: any) {
-    this.unMakeBaseElementReact(this.survey);
-    this.setState(this.getState());
-    this.updateSurvey(nextProps, this.props);
-    this.makeBaseElementReact(this.survey);
+  protected getStateElement(): Base {
+    return this.survey;
   }
-  componentDidUpdate() {
-    if (this.isCurrentPageChanged) {
-      this.isCurrentPageChanged = false;
-      this.survey.scrollToTopOnPageChange();
-    }
-  }
-  componentWillMount() {
-    this.makeBaseElementReact(this.survey);
-  }
-  componentDidMount() {
-    var el = this.refs["root"];
-    if (el && this.survey) this.survey.doAfterRenderSurvey(el);
-    if (this.survey) {
+  private isSurveyUpdated = false;
+  private onSurveyUpdated() {
+    if (!!this.survey) {
+      const el = this.rootRef.current;
+      if (!!el) this.survey.afterRenderSurvey(el);
       this.survey.startTimerFromUI();
     }
   }
-  componentWillUnmount() {
-    this.unMakeBaseElementReact(this.survey);
-    if (this.survey) {
-      this.survey.stopTimer();
-      this.survey.onCurrentPageChanged.remove(this.onCurrentPageChangedHandler);
+  shouldComponentUpdate(nextProps: any, nextState: any) {
+    if (!super.shouldComponentUpdate(nextProps, nextState)) return false;
+    if (this.isModelJSONChanged(nextProps)) {
+      this.destroySurvey();
+      this.createSurvey(nextProps);
+      this.updateSurvey(nextProps, {});
+      this.isSurveyUpdated = true;
+    }
+    return true;
+  }
+  componentDidUpdate(prevProps: any, prevState: any) {
+    super.componentDidUpdate(prevProps, prevState);
+    this.updateSurvey(this.props, prevProps);
+    if(this.isSurveyUpdated) {
+      this.onSurveyUpdated();
+      this.isSurveyUpdated = false;
     }
   }
+  componentDidMount() {
+    super.componentDidMount();
+    this.onSurveyUpdated();
+  }
+  destroySurvey() {
+    if (this.survey) {
+      this.survey.renderCallback = undefined as any;
+      this.survey.onPartialSend.clear();
+      this.survey.stopTimer();
+      this.survey.destroyResizeObserver();
+    }
+  }
+  componentWillUnmount() {
+    super.componentWillUnmount();
+    this.destroySurvey();
+  }
   doRender(): JSX.Element {
-    var renderResult;
+    let renderResult: JSX.Element | null;
     if (this.survey.state == "completed") {
       renderResult = this.renderCompleted();
     } else if (this.survey.state == "completedbefore") {
       renderResult = this.renderCompletedBefore();
     } else if (this.survey.state == "loading") {
       renderResult = this.renderLoading();
-    } else if (this.survey.state == "starting") {
-      renderResult = this.renderStartPage();
+    } else if (this.survey.state == "empty") {
+      renderResult = this.renderEmptySurvey();
     } else {
       renderResult = this.renderSurvey();
     }
-    var title = this.renderTitle();
-    var onSubmit = function() {
-      return false;
+    const backgroundImage = !!this.survey.backgroundImage ? <div className={this.css.rootBackgroundImage} style={this.survey.backgroundImageStyle}></div> : null;
+    const header: JSX.Element | null = this.survey.headerView === "basic" ? <SurveyHeader survey={this.survey}></SurveyHeader> : null;
+
+    const onSubmit = function (event: React.FormEvent<HTMLFormElement>) {
+      event.preventDefault();
     };
+    let customHeader: JSX.Element | null = <div className="sv_custom_header" />;
+    if (this.survey.hasLogo) {
+      customHeader = null;
+    }
+    const rootCss = this.survey.getRootCss();
+    const cssClasses = this.rootNodeClassName ? this.rootNodeClassName + " " + rootCss : rootCss;
+
     return (
-      <div ref="root" className={this.css.root}>
-        <form onSubmit={onSubmit}>
-          <div className="sv_custom_header" />
-          <div className="sv_container">
-            {title}
-            {renderResult}
-          </div>
-        </form>
+      <div id={this.rootNodeId} ref={this.rootRef} className={cssClasses} style={this.survey.themeVariables} lang={this.survey.locale || "en"} dir={this.survey.localeDir}>
+        {this.survey.needRenderIcons ? <SvgBundleComponent></SvgBundleComponent> : null }
+        <div className={this.survey.wrapperFormCss}>
+          {backgroundImage}
+          <form onSubmit={onSubmit}>
+            {customHeader}
+            <div className={this.css.container}>
+              {header}
+              <ComponentsContainer survey={this.survey} container={"header"} needRenderWrapper={false}></ComponentsContainer>
+              {renderResult}
+              <ComponentsContainer survey={this.survey} container={"footer"} needRenderWrapper={false}></ComponentsContainer>
+            </div>
+          </form>
+          { this.survey.showBrandInfo ? <BrandInfo/> : null }
+          <NotifierComponent notifier={this.survey.notifier} ></NotifierComponent>
+        </div>
       </div>
     );
   }
-  render(): JSX.Element {
+  protected renderElement(): JSX.Element {
     return this.doRender();
   }
   public get css(): any {
-    return surveyCss.getCss();
+    return this.survey.css;
   }
   public set css(value: any) {
-    this.survey.mergeCss(value, this.css);
+    this.survey.css = value;
   }
-  handleTryAgainClick(event: any) {
-    this.survey.doComplete();
-  }
-  protected renderCompleted(): JSX.Element {
+  protected renderCompleted(): JSX.Element | null {
     if (!this.survey.showCompletedPage) return null;
-    var completedState = null;
-    if (this.survey.completedState) {
-      var tryAgainButton = null;
-      if (this.survey.completedState == "error") {
-        var btnText = this.survey.getLocString("saveAgainButton");
-        tryAgainButton = (
-          <input
-            type={"button"}
-            value={btnText}
-            className={this.css.saveData.saveAgainButton}
-            onClick={this.handleTryAgainClick}
-          />
-        );
-      }
-      var css = this.css.saveData[this.survey.completedState];
-      completedState = (
-        <div className={this.css.saveData.root}>
-          <div className={css}>
-            <span>{this.survey.completedStateText}</span>
-            {tryAgainButton}
-          </div>
-        </div>
-      );
-    }
+
     var htmlValue = { __html: this.survey.processedCompletedHtml };
     return (
-      <div>
+      <React.Fragment>
         <div
           dangerouslySetInnerHTML={htmlValue}
-          className={[this.css.body, this.css.completedPage].join(" ")}
+          className={this.survey.completedCss}
         />
-        {completedState}
-      </div>
+        <ComponentsContainer survey={this.survey} container={"completePage"} needRenderWrapper={false}></ComponentsContainer>
+      </React.Fragment>
     );
   }
   protected renderCompletedBefore(): JSX.Element {
     var htmlValue = { __html: this.survey.processedCompletedBeforeHtml };
     return (
-      <div dangerouslySetInnerHTML={htmlValue} className={this.css.body} />
+      <div dangerouslySetInnerHTML={htmlValue} className={this.survey.completedBeforeCss} />
     );
   }
   protected renderLoading(): JSX.Element {
     var htmlValue = { __html: this.survey.processedLoadingHtml };
     return (
-      <div dangerouslySetInnerHTML={htmlValue} className={this.css.body} />
-    );
-  }
-  protected renderStartPage(): JSX.Element {
-    var startedPage = this.survey.startedPage
-      ? this.renderPage(this.survey.startedPage)
-      : null;
-    var pageId = this.survey.startedPage ? this.survey.startedPage.id : "";
-    return (
-      <div>
-        <div id={pageId} className={this.css.body}>
-          {this.renderNavigation("top")}
-          {startedPage}
-          {this.renderNavigation("bottom")}
-        </div>
-      </div>
+      <div dangerouslySetInnerHTML={htmlValue} className={this.survey.loadingBodyCss} />
     );
   }
   protected renderSurvey(): JSX.Element {
-    var currentPage = this.survey.currentPage
-      ? this.renderPage(this.survey.currentPage)
+    var activePage = this.survey.activePage
+      ? this.renderPage(this.survey.activePage)
       : null;
-    var pageId = this.survey.currentPage ? this.survey.currentPage.id : "";
-    var topProgress = this.survey.isShowProgressBarOnTop
-      ? this.renderProgress(true)
-      : null;
-    var bottomProgress = this.survey.isShowProgressBarOnBottom
-      ? this.renderProgress(false)
-      : null;
-    if (!currentPage) {
-      currentPage = this.renderEmptySurvey();
+    const isStaring = this.survey.isShowStartingPage;
+    var pageId = this.survey.activePage ? this.survey.activePage.id : "";
+
+    let className = this.survey.bodyCss;
+    const style: any = {};
+    if(!!this.survey.renderedWidth) {
+      style.maxWidth = this.survey.renderedWidth;
     }
     return (
-      <div
-        id={pageId}
-        className={!currentPage ? this.css.bodyEmpty : this.css.body}
-      >
-        {topProgress}
-        {this.renderTimerPanel("top")}
-        {this.renderNavigation("top")}
-        {currentPage}
-        {this.renderTimerPanel("bottom")}
-        {bottomProgress}
-        {this.renderNavigation("bottom")}
+      <div className={this.survey.bodyContainerCss}>
+        <ComponentsContainer survey={this.survey} container={"left"}></ComponentsContainer>
+        <div className="sv-components-column sv-components-column--expandable">
+          <ComponentsContainer survey={this.survey} container={"center"}></ComponentsContainer>
+          <div
+            id={pageId}
+            className={className}
+            style={style}
+          >
+            <ComponentsContainer survey={this.survey} container={"contentTop"}></ComponentsContainer>
+            {activePage}
+            <ComponentsContainer survey={this.survey} container={"contentBottom"}></ComponentsContainer>
+          </div>
+        </div>
+        <ComponentsContainer survey={this.survey} container={"right"}></ComponentsContainer>
       </div>
     );
-  }
-  protected renderTitle(): JSX.Element {
-    let title = null;
-    let description = null;
-    if (this.survey.title && this.survey.showTitle) {
-      title = SurveyElementBase.renderLocString(this.survey.locTitle);
-      description = SurveyElementBase.renderLocString(
-        this.survey.locDescription
-      );
-    }
-    return title ? (
-      <div className={this.css.header}>
-        <h3>{title}</h3>
-        <h5>{description}</h5>
-      </div>
-    ) : null;
-  }
-  protected renderTimerPanel(location: string) {
-    if (this.survey.showTimerPanel != location) return null;
-    return <SurveyTimerPanel survey={this.survey} />;
   }
   protected renderPage(page: PageModel): JSX.Element {
     return (
@@ -224,111 +202,94 @@ export class Survey extends SurveyElementBase implements ISurveyCreator {
       />
     );
   }
-  protected renderProgress(isTop: boolean): JSX.Element {
-    return <SurveyProgress survey={this.survey} css={this.css} isTop={isTop} />;
-  }
-  protected renderNavigation(navPosition: string): JSX.Element {
-    if (
-      this.survey.isNavigationButtonsShowing !== "both" &&
-      (this.survey.isNavigationButtonsShowing === "none" ||
-        this.survey.isNavigationButtonsShowing !== navPosition)
-    ) {
-      return null;
-    }
-    return <SurveyNavigation survey={this.survey} css={this.css} />;
-  }
   protected renderEmptySurvey(): JSX.Element {
-    return <span>{this.survey.emptySurveyText}</span>;
+    return <div className={this.css.bodyEmpty}>{this.survey.emptySurveyText}</div>;
   }
-
-  protected updateSurvey(newProps: any, oldProps: any) {
+  protected createSurvey(newProps: any) {
+    if (!newProps) newProps = {};
+    this.previousJSON = {};
     if (newProps) {
       if (newProps.model) {
         this.survey = newProps.model;
       } else {
         if (newProps.json) {
-          this.survey = new ReactSurveyModel(newProps.json);
+          this.previousJSON = newProps.json;
+          this.survey = new SurveyModel(newProps.json);
         }
       }
     } else {
-      this.survey = new ReactSurveyModel();
+      this.survey = new SurveyModel();
     }
-    if (newProps) {
-      for (var key in newProps) {
-        if (key == "model" || key == "children") continue;
-        if (key == "css") {
-          this.survey.mergeCss(newProps.css, this.css);
-          continue;
+    if (!!newProps.css) {
+      this.survey.css = this.css;
+    }
+    this.setSurveyEvents();
+  }
+  private isModelJSONChanged(newProps: any): boolean {
+    if (!!newProps["model"]) {
+      return this.survey !== newProps["model"];
+    }
+    if (!!newProps["json"]) {
+      return !Helpers.isTwoValueEquals(newProps["json"], this.previousJSON);
+    }
+    return false;
+  }
+  protected updateSurvey(newProps: any, oldProps?: any) {
+    if (!newProps) return;
+    oldProps = oldProps || {};
+    for (var key in newProps) {
+      if (key == "model" || key == "children" || key == "json") {
+        continue;
+      }
+      if (key == "css") {
+        this.survey.mergeValues(newProps.css, this.survey.getCss());
+        this.survey["updateNavigationCss"]();
+        this.survey["updateElementCss"]();
+        continue;
+      }
+      if (newProps[key] === oldProps[key]) continue;
+      if (key.indexOf("on") == 0 && this.survey[key] && this.survey[key].add) {
+        if (!!oldProps[key]) {
+          this.survey[key].remove(oldProps[key]);
         }
-        if (
-          key.indexOf("on") == 0 &&
-          this.survey[key] &&
-          this.survey[key].add
-        ) {
-          if (oldProps) {
-            this.survey[key].remove(oldProps[key]);
-          }
-          this.survey[key].add(newProps[key]);
-        } else {
-          this.survey[key] = newProps[key];
-        }
+        this.survey[key].add(newProps[key]);
+      } else {
+        this.survey[key] = newProps[key];
       }
     }
-    //set the first page
-    var dummy = this.survey.currentPage;
-
-    this.setSurveyEvents(newProps);
   }
-  private getState() {
-    return { pageIndexChange: 0, modelChanged: 0 };
-  }
-  protected setSurveyEvents(newProps: any) {
+  protected setSurveyEvents() {
     var self = this;
 
-    this.survey.renderCallback = function() {
-      self.setState({ modelChanged: self.state.modelChanged + 1 });
+    this.survey.renderCallback = function () {
+      var counter =
+        !!self.state && !!self.state.modelChanged ? self.state.modelChanged : 0;
+      self.setState({ modelChanged: counter + 1 });
     };
-    this.survey.onPartialSend.add(sender => {
-      self.setState(self.state);
-    });
-    this.survey.onCurrentPageChanged.add(this.onCurrentPageChangedHandler);
-    /*
-    this.survey.onValueChanged.add((sender, options) => {
-      if (options.question && options.question.react) {
-        var state = options.question.react.state || {};
-        state.value = options.value;
-        options.question.react.setState(state);
+    this.survey.onPartialSend.add((sender) => {
+      if (!!self.state) {
+        self.setState(self.state);
       }
-      if (newProps && newProps.data)
-        newProps.data[options.name] = options.value;
     });
-    */
   }
 
   //ISurveyCreator
-  public createQuestionElement(question: Question): JSX.Element {
-    return ReactQuestionFactory.Instance.createQuestion(
-      question.getTemplate(),
+  public createQuestionElement(question: Question): JSX.Element | null {
+    return ReactQuestionFactory.Instance.createQuestion(question.isDefaultRendering() ? question.getTemplate() : question.getComponentName(),
       {
         question: question,
-        isDisplayMode: question.isReadOnly,
-        creator: this
+        isDisplayMode: question.isInputReadOnly,
+        creator: this,
       }
     );
   }
   public renderError(
     key: string,
     error: SurveyError,
-    cssClasses: any
+    cssClasses: any,
+    element?: any
   ): JSX.Element {
-    return (
-      <div key={key}>
-        <span className={cssClasses.error.icon} aria-hidden="true" />
-        <span className={cssClasses.error.item}>
-          <SurveyLocString locStr={error.locText} />
-        </span>
-      </div>
-    );
+    return ReactElementFactory.Instance.createElement(this.survey.questionErrorComponent, { key: key, error, cssClasses, element });
   }
   public questionTitleLocation(): string {
     return this.survey.questionTitleLocation;
@@ -336,4 +297,29 @@ export class Survey extends SurveyElementBase implements ISurveyCreator {
   public questionErrorLocation(): string {
     return this.survey.questionErrorLocation;
   }
+}
+
+ReactElementFactory.Instance.registerElement("survey", (props) => {
+  return React.createElement(Survey, props);
+});
+
+export function attachKey2click(element: JSX.Element, viewModel?: any, options: IAttachKey2clickOptions = { processEsc: true, disableTabStop: false }): JSX.Element {
+  if ((!!viewModel && viewModel.disableTabStop) || (!!options && options.disableTabStop)) {
+    return React.cloneElement(element, { tabIndex: -1 });
+  }
+  options = { ...options };
+  return React.cloneElement(
+    element,
+    {
+      tabIndex: 0,
+      onKeyUp: (evt: KeyboardEvent) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        doKey2ClickUp(evt, options);
+        return false;
+      },
+      onKeyDown: (evt: any) => doKey2ClickDown(evt, options),
+      onBlur: (evt: any) => doKey2ClickBlur(evt)
+    }
+  );
 }

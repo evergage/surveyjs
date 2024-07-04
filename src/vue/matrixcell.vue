@@ -1,99 +1,42 @@
 <template>
-  <td :class="getQuestionClass()" :headers="getHeaders()">
-    <div v-if="cell.hasQuestion">
-      <survey-errors v-if="hasErrorsOnTop" :question="cell.question" :location="'top'"/>
-      <component
-        v-show="isVisible"
-        :is="getWidgetComponentName(cell.question)"
-        :question="cell.question"
-      />
-      <survey-errors v-if="hasErrorsOnBottom" :question="cell.question" :location="'bottom'"/>
-    </div>
-    <button
-      v-if="cell.isRemoveRow"
-      type="button"
-      :class="question.cssClasses.button + ' ' + question.cssClasses.buttonRemove"
-      @click="removeRowClick()"
-    >
-      <span>{{question.removeRowText}}</span>
-      <span :class="question.cssClasses.iconRemove"></span>
-    </button>
-    <survey-string v-if="cell.hasTitle" :locString="cell.locTitle"/>
-  </td>
+<label @mousedown="question.onMouseDown()" :class="question.getItemClass(row, column)">
+    <input
+      type="radio"
+      :class="question.cssClasses.itemValue"
+      :name="row.fullName"
+      v-model="row.value"
+      :value="column.value"
+      :readonly="row.isReadOnlyAttr"
+      :disabled="row.isDisabledAttr"
+      :id="question.inputId + '_' + row.name + '_' + columnIndex"
+      :aria-required="question.a11y_input_ariaRequired"
+      :aria-label="question.getCellAriaLabel(row.locText.renderedHtml, column.locText.renderedHtml)"
+      :aria-invalid="question.a11y_input_ariaInvalid"
+      :aria-errormessage="question.a11y_input_ariaErrormessage"
+    />
+    <span :class="question.cssClasses.materialDecorator">
+      <svg v-if="question.itemSvgIcon" :class="question.cssClasses.itemDecorator">
+        <use :xlink:href="question.itemSvgIcon"></use>
+      </svg>
+    </span>
+    <span v-if="question.isMobile" :class="question.cssClasses.cellResponsiveTitle">
+      <survey-string :locString="column.locText"></survey-string>
+    </span>
+  </label>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
 import { Component, Prop } from "vue-property-decorator";
-import { surveyCss } from "../defaultCss/cssstandard";
-import { Question } from "../question";
-import {
-  MatrixDropdownCell,
-  QuestionMatrixDropdownRenderedCell
-} from "../question_matrixdropdownbase";
+import { MatrixRowModel, ItemValue, QuestionMatrixModel } from "survey-core";
 
 @Component
 export class MatrixCell extends Vue {
-  @Prop question: Question;
-  @Prop cell: QuestionMatrixDropdownRenderedCell;
-
-  isVisible: boolean = false;
-  getWidgetComponentName(element: Question) {
-    if (element.customWidget) {
-      return "survey-customwidget";
-    }
-    return "survey-" + element.getType();
-  }
-  get hasErrorsOnTop() {
-    return this.cell.question.survey.questionErrorLocation === "top";
-  }
-  get hasErrorsOnBottom() {
-    return this.cell.question.survey.questionErrorLocation === "bottom";
-  }
-  getHeaders() {
-    var element = this.cell.question;
-    if (!element) return "";
-    return element.isVisible ? this.cell.cell.column.locTitle.renderedHtml : "";
-  }
-  getQuestionClass() {
-    var element = this.cell.question;
-    if (!element) return "";
-    var classes = element.cssClasses.itemValue;
-
-    if (!!element.errors && element.errors.length > 0) {
-      classes += " " + element.cssClasses.hasError;
-    }
-
-    return classes;
-  }
-  removeRowClick() {
-    this.question.removeRowUI(this.cell.row);
-  }
-  mounted() {
-    if (!this.cell.hasQuestion || !this.question || !this.question.survey)
-      return;
-    this.onVisibilityChanged();
-    var self = this;
-    this.cell.question.registerFunctionOnPropertyValueChanged(
-      "isVisible",
-      function() {
-        self.onVisibilityChanged();
-      }
-    );
-    var options = {
-      cell: this.cell.cell,
-      cellQuestion: this.cell.question,
-      htmlElement: this.$el,
-      row: this.cell.row,
-      column: this.cell.cell.column
-    };
-    this.question.survey.matrixAfterCellRender(this.question, options);
-  }
-  private onVisibilityChanged() {
-    this.isVisible = this.cell.question.isVisible;
-  }
+  @Prop() question: QuestionMatrixModel;
+  @Prop() row: MatrixRowModel;
+  @Prop() column: ItemValue;
+  @Prop() columnIndex: number;
 }
-
-Vue.component("survey-matrixcell", MatrixCell);
+Vue.component("survey-matrix-cell", MatrixCell);
 export default MatrixCell;
 </script>

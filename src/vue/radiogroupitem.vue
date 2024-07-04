@@ -1,39 +1,56 @@
 <template>
-    <div>
-      <label :class="question.cssClasses.label">
-        <input
-          type="radio"
-          :name="question.name + '_' + question.id"
-          :value="item.value"
-          :id="question.inputId + '_' + index"
-          v-model="question.renderedValue"
-          :disabled="question.isReadOnly || !item.isEnabled"
-          v-bind:aria-label="item.locText.renderedHtml"
-          :class="question.cssClasses.itemControl"
+  <div role="presentation" :class="question.getItemClass(item)">
+    <label @mousedown="question.onMouseDown()" :class="getLabelClass(item)">
+      <input
+        type="radio"
+        :name="question.questionName"
+        :value="item.value"
+        :id="question.getItemId(item)"
+        :aria-errormessage="question.ariaErrormessage"
+        v-model="question.renderedValue"
+        :disabled="!question.getItemEnabled(item)"
+        :readonly="question.isReadOnlyAttr"
+        :class="question.cssClasses.itemControl"
+      /><span
+        v-if="question.cssClasses.materialDecorator"
+        :class="question.cssClasses.materialDecorator"
+      >
+        <svg
+          v-if="question.itemSvgIcon"
+          :class="question.cssClasses.itemDecorator"
         >
-        <span :class="question.cssClasses.materialDecorator"></span>
-        <span class="check"></span>
-        <span :class="question.cssClasses.controlLabel">
-          <survey-string :locString="item.locText"/>
-        </span>
-      </label>
-      <survey-other-choice
-          v-show="question.hasOther && question.renderedValue && question.isOtherSelected"
-          v-if="item.value == question.otherItem.value"
-          :question="question"
-        />
-    </div>
+          <use :xlink:href="question.itemSvgIcon"></use>
+        </svg> </span
+      ><span
+        v-if="!hideLabel"
+        :class="getControlLabelClass(item)"
+      >
+        <survey-string :locString="item.locText" />
+      </span> </label
+    >
+  </div>
 </template>
 
 <script lang="ts">
+import { ItemValue, Base } from "survey-core";
 import Vue from "vue";
 import { Component, Prop } from "vue-property-decorator";
+import { BaseVue } from "./base";
 
 @Component
-export class RadiogroupItem extends Vue {
-  @Prop question: any;
-  @Prop item: any;
-  @Prop index: any;
+export class RadiogroupItem extends BaseVue {
+  @Prop() question: any;
+  @Prop() item: ItemValue;
+  @Prop() hideLabel: boolean;
+  protected getModel(): Base {
+    return this.item;
+  }
+  getLabelClass(item: any) {
+    return this.question.getLabelClass(item);
+  }
+  getControlLabelClass(item: any) {
+    return this.question.getControlLabelClass(item);
+  }
 }
 Vue.component("survey-radiogroup-item", RadiogroupItem);
 export default RadiogroupItem;

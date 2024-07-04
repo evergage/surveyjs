@@ -1,37 +1,36 @@
 <template>
-    <div>
-        <input type="range" v-if="question.isRangeShowing" min="0" :max="rangeMax" :value="question.currentIndex" style="width:25%;float:left;margin:5px" @change="changeRange" />
-        <input type="button" v-if="question.isPrevButtonShowing" :value="question.panelPrevText" style="float:left;margin:5px"  :class="question.cssClasses.button  + ' ' + question.cssClasses.buttonPrev"  @click="prevPanelClick" />
-        <input type="button" v-if="question.isNextButtonShowing" :value="question.panelNextText"  style="float:left;margin:5px"  :class="question.cssClasses.button  + ' ' + question.cssClasses.buttonNext"  @click="nextPanelClick" />
-        <input type="button" v-if="question.canAddPanel" :value="question.panelAddText" style="float:left;margin:5px"  :class="question.cssClasses.button  + ' ' + question.cssClasses.buttonAdd"  @click="addPanelClick"/>
+  <div :class="this.cssClass">
+    <div style="clear: both" :class="this.cssClass">
+      <div :class="question.cssClasses.progressContainer">
+          <sv-paneldynamic-prev-btn :data="{ question: question }" />
+        <div :class="question.cssClasses.progress" v-if="question.isRangeShowing">
+          <div
+            :class="question.cssClasses.progressBar"
+            :style="{ width: question.progress }"
+            role="progressbar"
+          ></div>
+        </div>
+          <sv-paneldynamic-next-btn :data="{ question: question }" />
+      </div>
+      <sv-paneldynamic-add-btn :data="{ question: question }" />
+      <sv-paneldynamic-progress-text :data="{ question: question }" />
     </div>
+  </div>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
 import { Component, Prop } from "vue-property-decorator";
-import { PanelModel } from "../panel";
-import { QuestionPanelDynamicModel } from "../question_paneldynamic";
+import { Question, QuestionPanelDynamicModel, CssClassBuilder } from "survey-core";
 
 @Component
 export class PanelDynamicProgress extends Vue {
-  @Prop question: QuestionPanelDynamicModel;
+  @Prop() question: QuestionPanelDynamicModel;
 
-  get rangeMax() {
-    return this.question.panelCount - 1;
-  }
-  addPanelClick() {
-    this.question.addPanelUI();
-  }
-  prevPanelClick() {
-    this.question.goToPrevPanel();
-  }
-  nextPanelClick() {
-    this.question.goToNextPanel();
-  }
-
-  changeRange(event: any) {
-    this.question.currentIndex = event.target.value;
+  get cssClass() {
+    return this.question.isProgressTopShowing
+      ? this.question.cssClasses.progressTop
+      : this.question.cssClasses.progressBottom;
   }
 }
 

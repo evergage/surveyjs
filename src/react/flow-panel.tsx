@@ -1,10 +1,8 @@
 import * as React from "react";
-import { SurveyQuestion } from "./reactquestion";
-import { Question } from "../question";
-import { FlowPanelModel } from "../flowpanel";
+import { FlowPanelModel, Question } from "survey-core";
 import { ReactElementFactory } from "./element-factory";
-
 import { SurveyPanel } from "./panel";
+import { SurveyQuestion } from "./reactquestion";
 
 export class SurveyFlowPanel extends SurveyPanel {
   constructor(props: any) {
@@ -13,21 +11,20 @@ export class SurveyFlowPanel extends SurveyPanel {
   public get flowPanel(): FlowPanelModel {
     return this.panel as FlowPanelModel;
   }
-  componentWillMount() {
-    super.componentWillMount();
+  componentDidMount() {
+    super.componentDidMount();
     if (!!this.flowPanel) {
-      var self = this;
       this.flowPanel.onCustomHtmlProducing = function() {
         return "";
       };
-      this.flowPanel.onGetHtmlForQuestion = self.renderQuestion;
+      this.flowPanel.onGetHtmlForQuestion = this.renderQuestion;
     }
   }
   componentWillUnmount() {
     super.componentWillUnmount();
     if (!!this.flowPanel) {
-      this.flowPanel.onCustomHtmlProducing = null;
-      this.flowPanel.onGetHtmlForQuestion = null;
+      this.flowPanel.onCustomHtmlProducing = null as any;
+      this.flowPanel.onGetHtmlForQuestion = null as any;
     }
   }
   protected getQuestion(name: string): Question {
@@ -37,32 +34,40 @@ export class SurveyFlowPanel extends SurveyPanel {
     return "<question>" + question.name + "</question>";
   }
   protected renderRows(): Array<JSX.Element> {
-    return [this.renderHtml()];
+    const result = this.renderHtml();
+    if(!!result) {
+      return [result];
+    } else {
+      return [];
+    }
   }
   private renderedIndex: number;
   private getNodeIndex(): number {
     return this.renderedIndex++;
   }
-  protected renderHtml(): JSX.Element {
+  protected renderHtml(): JSX.Element | null {
     if (!this.flowPanel) return null;
-    let html = "<span>" + this.flowPanel.produceHtml() + "</span>";
+    const html = "<span>" + this.flowPanel.produceHtml() + "</span>";
     if (!DOMParser) {
-      var htmlValue = { __html: html };
+      const htmlValue = { __html: html };
       return <div dangerouslySetInnerHTML={htmlValue} />;
     }
-    let doc = new DOMParser().parseFromString(html, "text/xml");
+    const doc = new DOMParser().parseFromString(html, "text/xml");
     this.renderedIndex = 0;
     return this.renderParentNode(doc);
   }
   protected renderNodes(domNodes: Array<Node>): Array<JSX.Element> {
-    var nodes = [];
-    for (var i = 0; i < domNodes.length; i++) {
-      nodes.push(this.renderNode(domNodes[i]));
+    const nodes: Array<JSX.Element> = [];
+    for (let i = 0; i < domNodes.length; i++) {
+      const node = this.renderNode(domNodes[i]);
+      if(!!node) {
+        nodes.push(node);
+      }
     }
     return nodes;
   }
   private getStyle(nodeType: string) {
-    var style: any = {};
+    const style: any = {};
     if (nodeType.toLowerCase() === "b") {
       style.fontWeight = "bold";
     }
@@ -75,9 +80,9 @@ export class SurveyFlowPanel extends SurveyPanel {
     return style;
   }
   protected renderParentNode(node: Node): JSX.Element {
-    var nodeType = node.nodeName.toLowerCase();
-    var children = this.renderNodes(this.getChildDomNodes(node));
-    if (nodeType == "div")
+    const nodeType = node.nodeName.toLowerCase();
+    const children = this.renderNodes(this.getChildDomNodes(node));
+    if (nodeType === "div")
       return <div key={this.getNodeIndex()}>{children}</div>;
     return (
       <span key={this.getNodeIndex()} style={this.getStyle(nodeType)}>
@@ -85,15 +90,15 @@ export class SurveyFlowPanel extends SurveyPanel {
       </span>
     );
   }
-  protected renderNode(node: Node): JSX.Element {
+  protected renderNode(node: Node): JSX.Element | null {
     if (!this.hasTextChildNodesOnly(node)) {
       return this.renderParentNode(node);
     }
-    var nodeType = node.nodeName.toLowerCase();
+    const nodeType = node.nodeName.toLowerCase();
     if (nodeType === "question") {
-      var question = this.flowPanel.getQuestionByName(node.textContent);
+      const question = this.flowPanel.getQuestionByName(node.textContent as any);
       if (!question) return null;
-      var questionBody = (
+      const questionBody = (
         <SurveyQuestion
           key={question.name}
           element={question}
@@ -113,15 +118,15 @@ export class SurveyFlowPanel extends SurveyPanel {
     );
   }
   private getChildDomNodes(node: Node): Array<Node> {
-    var domNodes = [];
-    for (var i = 0; i < node.childNodes.length; i++) {
+    const domNodes: Array<Node> = [];
+    for (let i = 0; i < node.childNodes.length; i++) {
       domNodes.push(node.childNodes[i]);
     }
     return domNodes;
   }
   private hasTextChildNodesOnly(node: Node): boolean {
-    var nodes = node.childNodes;
-    for (var i = 0; i < nodes.length; i++) {
+    const nodes = node.childNodes;
+    for (let i = 0; i < nodes.length; i++) {
       if (nodes[i].nodeName.toLowerCase() !== "#text") return false;
     }
     return true;

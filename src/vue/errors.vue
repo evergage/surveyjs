@@ -1,49 +1,35 @@
 <template>
-  <div role="alert" v-show="isShow" :class="classes">
-    <div v-for="error in question.errors">
-      <span
-        :class="question.cssClasses ? question.cssClasses.error.icon : 'panel-error-icon'"
-        aria-hidden="true"
-      ></span>
-      <span :class="question.cssClasses ? question.cssClasses.error.item : 'panel-error-item'">
-        <survey-string :locString="error.locText"/>
-      </span>
-    </div>
+  <div
+    role="alert"
+    aria-live="polite"
+    v-if="element.hasVisibleErrors"
+    :class="element.cssError"
+    :id="element.id + '_errors'"
+  >
+    <component
+      v-for="(error, index) in element.errors"
+      :is="element.survey['questionErrorComponent']"
+      :element="element"
+      :key="'error_' + index"
+      :errorKey="'error_' + index"
+      :error="error"
+      :cssClasses="element.cssClasses"
+    />
   </div>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
+import { BaseVue } from "./base";
 import { Component, Prop } from "vue-property-decorator";
-import { Question } from "../question";
-import { SurveyError } from "../base";
+import { Base, Question, PanelModel } from "survey-core";
 
 @Component
-export class Errors extends Vue {
-  @Prop question: Question;
-  @Prop location: String;
-
-  get isShow() {
-    return !!this.question.errors && this.question.errors.length > 0
-  }
-
-  get classes() {
-    var question = this.question;
-    var classes = question.cssClasses
-      ? question.cssClasses.error.root
-      : "panel-error-root";
-
-    var additionalClasses = "";
-
-    if (this.location === "top") {
-      additionalClasses = question.cssClasses.error.locationTop;
-    } else if (this.location === "bottom") {
-      additionalClasses = question.cssClasses.error.locationBottom;
-    }
-
-    if (additionalClasses) classes += " " + additionalClasses;
-
-    return classes;
+export class Errors extends BaseVue {
+  @Prop() element: Question | PanelModel;
+  @Prop() location: String;
+  protected getModel(): Base {
+    return this.element;
   }
 }
 Vue.component("survey-errors", Errors);

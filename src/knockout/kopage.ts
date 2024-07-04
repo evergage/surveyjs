@@ -1,45 +1,75 @@
 import * as ko from "knockout";
-import { PageModel } from "../page";
-import { PanelModelBase, PanelModel, QuestionRowModel } from "../panel";
-import { Serializer } from "../jsonobject";
-import { SurveyElement, IElement } from "../base";
-import { ElementFactory } from "../questionfactory";
+import { PageModel } from "survey-core";
+import { PanelModelBase, PanelModel, QuestionRowModel, Question, Base, doKey2ClickUp } from "survey-core";
+import { Serializer } from "survey-core";
+import { SurveyElement, IElement } from "survey-core";
+import { ElementFactory } from "survey-core";
 import { ImplementorBase } from "./kobase";
+import { } from "survey-core";
 
 export class QuestionRow extends QuestionRowModel {
-  koGetType: any;
   koElementAfterRender: any;
   constructor(public panel: PanelModelBase) {
     super(panel);
     new ImplementorBase(this);
     var self = this;
-    this.koGetType = function(el: any) {
-      return self.getElementType(el);
-    };
-    this.koElementAfterRender = function(el: any, con: any) {
+    this.koElementAfterRender = function (el: any, con: any) {
       return self.elementAfterRender(el, con);
     };
   }
   public getElementType(el: any) {
     return el.isPanel ? "survey-panel" : "survey-question";
   }
-  public koAfterRender(el: any, con: any) {
-    for (var i = 0; i < el.length; i++) {
-      var tEl = el[i];
+
+  public koAfterRender(htmlElements: any, element: SurveyElement) {
+    for (var i = 0; i < htmlElements.length; i++) {
+      var tEl = htmlElements[i];
       var nName = tEl.nodeName;
       if (nName == "#text") tEl.data = "";
+      else {
+        element.setWrapperElement(tEl);
+        ko.utils.domNodeDisposal.addDisposeCallback(tEl, () => {
+          element.setWrapperElement(undefined);
+        });
+      }
     }
   }
   private elementAfterRender(elements: any, con: any) {
     if (!this.panel || !this.panel.survey) return;
-    var el = SurveyElement.GetFirstNonTextElement(elements);
-    if (!el) return;
-    var element = <IElement>con;
-    if (element.isPanel) {
-      this.panel.survey.afterRenderPanel(con, el);
-    } else {
-      this.panel.survey.afterRenderQuestion(con, el);
+
+    setTimeout(() => {
+      !!ko.tasks && ko.tasks.runEarly();
+      var el = SurveyElement.GetFirstNonTextElement(elements);
+      if (!el) return;
+      var element = <IElement>con;
+      if((<Base><any>element).isDisposed) return;
+      if (element.isPanel && this.panel.survey) {
+        this.panel.survey.afterRenderPanel(con, el);
+      } else {
+        (<Question>element).afterRender(el);
+      }
+    }, 0);
+  }
+  rowAfterRender(elements: HTMLElement[], model: QuestionRow) {
+    const rowContainerDiv = elements[0].parentElement;
+    model.setRootElement(rowContainerDiv);
+    ko.utils.domNodeDisposal.addDisposeCallback(rowContainerDiv, () => {
+      model.setRootElement(undefined);
+    });
+    if (!model.isNeedRender) {
+      const timer = setTimeout(() => model.startLazyRendering(rowContainerDiv), 1);
+      ko.utils.domNodeDisposal.addDisposeCallback(rowContainerDiv, () => {
+        clearTimeout(timer);
+        model.stopLazyRendering();
+        if(!model.isDisposed) {
+          model.isNeedRender = !model.isLazyRendering();
+        }
+      });
     }
+  }
+  public dispose(): void {
+    super.dispose();
+    this.koElementAfterRender = undefined;
   }
 }
 
@@ -50,87 +80,63 @@ export class PanelImplementorBase extends ImplementorBase {
 }
 
 export class Panel extends PanelModel {
+  private _implementor: ImplementorBase;
   koElementType: any;
-  koCss: any;
-  koIsExpanded: any;
-  koIsCollapsed: any;
-  doExpand: any;
   constructor(name: string = "") {
     super(name);
-    new PanelImplementorBase(this);
     this.onCreating();
     var self = this;
     this.koElementType = ko.observable("survey-panel");
-    this.koCss = ko.pureComputed(function() {
-      return self.cssClasses;
-    });
-    this.koIsCollapsed = ko.observable(this.isCollapsed);
-    this.koIsExpanded = ko.observable(this.isExpanded);
-    this.stateChangedCallback = function() {
-      self.onStateChanged();
-    };
-    this.doExpand = function() {
-      self.changeExpanded();
-    };
   }
-  protected createRow(): QuestionRowModel {
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new PanelImplementorBase(this);
+  }
+  public createRow(): QuestionRowModel {
     return new QuestionRow(this);
   }
-  protected onCreating() {}
+  protected onCreating() { }
   protected onNumChanged(value: number) {
-    this.locTitle.onChanged();
+    this.locTitle.strChanged();
   }
-  private onStateChanged() {
-    this.koIsCollapsed(this.isCollapsed);
-    this.koIsExpanded(this.isExpanded);
-  }
-  private changeExpanded() {
-    if (!this.isCollapsed && !this.isExpanded) return;
-    if (this.isCollapsed) {
-      this.expand();
-    } else {
-      this.collapse();
-    }
-  }
-  getTitleStyle() {
-    var result = this.cssClasses.panel.title;
-    if (this.koIsCollapsed() || this.koIsExpanded()) {
-      result += " sv_p_title_expandable";
-    }
-    return result;
-  }
-  endLoadingFromJson() {
-    super.endLoadingFromJson();
-    this.onStateChanged();
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 
 export class Page extends PageModel {
+  private _implementor: ImplementorBase;
   constructor(name: string = "") {
     super(name);
-    new ImplementorBase(this);
     this.onCreating();
   }
-  protected createRow(): QuestionRowModel {
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new ImplementorBase(this);
+  }
+  public createRow(): QuestionRowModel {
     return new QuestionRow(this);
   }
-  protected createNewPanel(name: string): PanelModel {
-    return new Panel(name);
-  }
-
-  protected onCreating() {}
+  protected onCreating() { }
   protected onNumChanged(value: number) {
-    this.locTitle.onChanged();
+    this.locTitle.strChanged();
+  }
+  public dispose(): void {
+    super.dispose();
+    this._implementor.dispose();
+    this._implementor = undefined;
   }
 }
 
-Serializer.overrideClassCreator("panel", function() {
+Serializer.overrideClassCreator("panel", function () {
   return new Panel();
 });
-Serializer.overrideClassCreator("page", function() {
+Serializer.overrideClassCreator("page", function () {
   return new Page();
 });
 
-ElementFactory.Instance.registerElement("panel", name => {
+ElementFactory.Instance.registerElement("panel", (name) => {
   return new Panel(name);
 });

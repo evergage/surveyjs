@@ -36,6 +36,7 @@ LogicAnd
 ComparableOperators
   = ("<=" / "lessorequal"i)             { return "lessorequal"; }
   / (">=" / "greaterorequal"i)          { return "greaterorequal"; }
+  / ("==" / "equal"i)                   { return "equal"; }
   / ("=" / "equal"i)                    { return "equal"; }
   / ("!=" / "notequal"i)                { return "notequal"; }
   / ("<" / "less"i)                     { return "less"; }
@@ -103,11 +104,13 @@ Atom
   / _ "{" value:ValueInput "}" { return new Variable(value); }
 
 ConstValue
-  = LogicValue
-  / ArithmeticValue
-  / LettersAndDigits
-  / "'" value:AnyInput "'"   { return value; }
-  / "\"" value:AnyInput "\"" { return value; }
+  = value:LogicValue  { return value; }
+  / value:ArithmeticValue  { return value; }
+  / value:LettersAndDigits  { return value; }
+  / "''" {return ""; }
+  / "\"\"" {return ""; }
+  / "'" value:AnyInput "'" { return "'" + value + "'"; }
+  / "\"" value:AnyInput "\"" { return "'" + value + "'"; }
 
 ArrayOp
   = "[" sequence:Sequence "]" { return sequence; }
@@ -115,7 +118,7 @@ ArrayOp
 Sequence
   = expr:Expression? tail:(_ "," _ Expression)* {
     if (expr == null)
-      return [];
+      return new ArrayOperand([]);
 
     var array = [expr];
     if (Array.isArray(tail)) {
@@ -150,7 +153,7 @@ AnyInput
 AnyCharacters
   = "\\'"       { return "'"; }
   / "\\\""      { return "\""; }
-  / [^\"\'\{\}] { return text(); }
+  / [^\"\'] { return text(); }
 
 ValueCharacters
   = [^\{\}] { return text(); }
@@ -165,7 +168,7 @@ NonZeroDigits
   = [1-9]+
 
 Letters
-  = [a-zA-Z]+
+  = [a-zA-Z_]+
 
 _ "whitespace"
   = [ \t\n\r]*

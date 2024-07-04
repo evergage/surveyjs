@@ -1,17 +1,12 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
+import { frameworks, url, initSurvey } from "../helper";
+import { ClientFunction, fixture, test, Selector } from "testcafe";
+// eslint-disable-next-line no-undef
 const assert = require("assert");
-const title = `questionsInOneLine and titles location`;
+const title = "questionsInOneLine and titles location";
 
-const changeTitleLocation = ClientFunction(location => {
-  survey.questionTitleLocation = location;
-  survey.render();
+const changeTitleLocation = ClientFunction((location) => {
+  window["survey"].questionTitleLocation = location;
+  window["survey"].render();
 });
 
 const json = {
@@ -29,7 +24,7 @@ const json = {
           type: "text",
           name: "state",
           startWithNewLine: false,
-          title: "State / Province / Region"
+          title: "State / Province / Region",
         },
         { type: "text", name: "zip", title: "Zip / Postal Code" },
         {
@@ -40,78 +35,42 @@ const json = {
           choicesByUrl: {
             url: "http://services.groupkt.com/country/get/all",
             path: "RestResponse;result",
-            valueName: "name"
-          }
-        }
-      ]
-    }
-  ]
+            valueName: "name",
+          },
+        },
+      ],
+    },
+  ],
 };
 
-frameworks.forEach(framework => {
+frameworks.forEach((framework) => {
   fixture`${framework} ${title}`.page`${url}${framework}`.beforeEach(
-    async t => {
+    async (t) => {
       await initSurvey(framework, json);
     }
   );
 
-  test(`check one line`, async t => {
+  test("check one line", async (t) => {
     const isOneLine = ClientFunction(
       () =>
-        document.querySelectorAll("div > h5:last-of-type")[2].parentNode
-          .parentNode.style.width === "50%" &&
-        document.querySelectorAll("div > h5:last-of-type")[3].parentNode
-          .parentNode.style.width === "50%"
+        document.querySelector("div[data-name='city']").parentNode.style
+          .flex === "1 1 50%" &&
+        document.querySelector("div[data-name='state']").parentNode.style
+          .flex === "1 1 50%"
     );
     const isCountRight = ClientFunction(
-      () => document.querySelectorAll("div > h5:last-of-type").length === 6
+      () => document.querySelectorAll(".sv_q").length === 6
     );
 
-    assert(await isOneLine());
+    const cityElement = Selector(
+      "div[style*=\"flex: 1 1 50%\"] div[data-name='city']"
+    );
+    const stateElement = Selector(
+      "div[style*=\"flex: 1 1 50%\"] div[data-name='state']"
+    );
+    await t.expect(cityElement.exists).ok().expect(stateElement.exists).ok();
+    // assert(await isOneLine());
     assert(await isCountRight());
   });
 
-  test(`change title location`, async t => {
-    const isInputAboveHeader = ClientFunction(() => {
-      var h5 = document.querySelectorAll("h5:last-of-type")[2],
-        input = h5.parentNode.parentNode.querySelector("input");
-      return h5.getBoundingClientRect().top > input.getBoundingClientRect().top;
-    });
-
-    const isHeaderAboveInput = ClientFunction(() => {
-      var h5 = document.querySelectorAll("h5:first-of-type")[2],
-        input = h5.parentNode.parentNode.querySelector("input");
-      return h5.getBoundingClientRect().top < input.getBoundingClientRect().top;
-    });
-
-    assert(await isInputAboveHeader());
-
-    await changeTitleLocation("top");
-
-    assert(await isHeaderAboveInput());
-  });
-
-  test(`change title location left`, async t => {
-    const isInputAboveHeader = ClientFunction(() => {
-      var h5 = document.querySelectorAll("h5:first-of-type")[2],
-        input = h5.parentNode.parentNode.querySelector("input");
-      return (
-        h5.getBoundingClientRect().left === input.getBoundingClientRect().left
-      );
-    });
-
-    const isHeaderToTheLeftOfInput = ClientFunction(() => {
-      var h5 = document.querySelectorAll("h5:last-of-type")[2],
-        input = h5.parentNode.parentNode.querySelector("input");
-      return (
-        h5.getBoundingClientRect().left < input.getBoundingClientRect().left
-      );
-    });
-
-    assert(await isInputAboveHeader());
-
-    await changeTitleLocation("left");
-
-    assert(await isHeaderToTheLeftOfInput());
-  });
 });

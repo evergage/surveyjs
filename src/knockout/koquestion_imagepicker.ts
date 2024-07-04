@@ -1,33 +1,47 @@
 import * as ko from "knockout";
-import { QuestionImagePickerModel } from "../question_imagepicker";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
+import { ItemValue, QuestionImagePickerModel } from "survey-core";
+import { Serializer } from "survey-core";
+import { QuestionFactory } from "survey-core";
 import { QuestionCheckboxBaseImplementor } from "./koquestion_baseselect";
+import { Question } from "survey-core";
+
+class QuestionImagePickerImplementor extends QuestionCheckboxBaseImplementor {
+  private koRecalc: any;
+  constructor(public question: QuestionImagePicker) {
+    super(question);
+    this.koRecalc = ko.observable(0);
+    this.setCallbackFunc("koGetItemClass", (item: ItemValue) => {
+      this.koRecalc();
+      return question.getItemClass(item);
+    });
+    this.question.registerFunctionOnPropertyValueChanged("value", () => {
+      if(this.question.multiSelect && this.question.isDesignMode) {
+        this.koRecalc(this.koRecalc() + 1);
+      }
+    }, "__koOnValueChangeTrigger");
+  }
+  protected getKoValue() {
+    return this.question.renderedValue;
+  }
+  public dispose(): void {
+    this.question.unRegisterFunctionOnPropertyValueChanged("value", "__koOnValueChangeTrigger");
+    super.dispose();
+  }
+}
 
 export class QuestionImagePicker extends QuestionImagePickerModel {
-  constructor(public name: string) {
+  private _implementor: QuestionImagePickerImplementor;
+  constructor(name: string) {
     super(name);
   }
-  endLoadingFromJson() {
-    super.endLoadingFromJson();
-    new QuestionCheckboxBaseImplementor(this);
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionImagePickerImplementor(this);
   }
-  getItemClass(item: any) {
-    var itemClass =
-      this.cssClasses.item +
-      (this.colCount === 0
-        ? " sv_q_imagepicker_inline"
-        : " sv-q-col-" + this.colCount);
-    if (this.multiSelect) {
-      if (!!this.value && this["koValue"]().indexOf(item.value) !== -1) {
-        itemClass += " checked";
-      }
-    } else {
-      if (!!item.value && item.value == this["koValue"]()) {
-        itemClass += " checked";
-      }
-    }
-    return itemClass;
+  public dispose(): void {
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 

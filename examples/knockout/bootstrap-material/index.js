@@ -18,7 +18,7 @@ function init() {
     "$body-container-background-color"
   ] = bodyContainerBackgroundColor;
 
-  Survey.Survey.cssType = "bootstrapmaterial";
+  //Survey.Survey.cssType = "bootstrapmaterial";
   Survey.StylesManager.applyTheme("bootstrapmaterial");
 
   var json = {
@@ -64,7 +64,7 @@ function init() {
                 text: "Product does what it claims"
               },
               {
-                value: "better then others",
+                value: "better than others",
                 text: "Product is better than other products on the market"
               },
               { value: "easy to use", text: "Product is easy to use" }

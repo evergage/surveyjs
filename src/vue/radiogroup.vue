@@ -1,47 +1,87 @@
 <template>
-  <fieldset :class="question.cssClasses.root">
-    <legend v-bind:aria-label="question.locTitle.renderedHtml"></legend>
-    <survey-radiogroup-item v-if="!question.hasColumns" v-for="(item, index) in question.visibleChoices"
-      :key="item.value" :class="getItemClass(item)"
-      :question="question" :item="item" :index="index"></survey-radiogroup-item>
-    <div v-if="question.hasColumns" v-for="column in question.columns" :class="question.getColumnClass()">
-      <survey-radiogroup-item v-for="(item, index) in column"
-        :key="item.value" :class="getItemClass(item)"
-        :question="question" :item="item" :index="index"></survey-radiogroup-item>
+  <fieldset :class="question.getSelectBaseRootCss()"
+    :role="question.a11y_input_ariaRole"
+    :aria-required="question.a11y_input_ariaRequired"
+    :aria-label="question.a11y_input_ariaLabel"
+    :aria-labelledby="question.a11y_input_ariaLabelledBy"
+    :aria-describedby="question.a11y_input_ariaDescribedBy"
+    :aria-invalid="question.a11y_input_ariaInvalid"
+    :aria-errormessage="question.a11y_input_ariaErrormessage"
+  >
+    <component
+      v-if="!question.hasColumns && !question.blockedRow"
+      v-for="(item) in question.bodyItems"
+      :key="item.value"
+      :is="question.itemComponent"
+      :question="question"
+      :item="item"
+    ></component>
+    <div :class="question.cssClasses.rootRow" v-if="question.blockedRow">
+    <component
+      v-if="!question.hasColumns && question.blockedRow"
+      v-for="(item) in question.dataChoices"
+      :key="item.value"
+      :is="question.itemComponent"
+      :question="question"
+      :item="item"
+    ></component>
     </div>
-
-    <div v-if="question.canShowClearButton">
+    <div
+      v-if="question.hasColumns"
+      :class="question.cssClasses.rootMultiColumn">
+    <div
+      v-if="question.hasColumns"
+      v-for="(column, colIndex) in question.columns"
+      v-bind:key="colIndex"
+      :class="question.getColumnClass()"
+      role="presentation"
+    >
+      <component
+        v-for="item in column"
+        :key="item.value"
+        :is="question.itemComponent"
+        :question="question"
+        :item="item"
+      ></component>
+    </div>
+    </div>
+        <component
+        v-for="item in question.footItems"
+        v-if="question.hasFootItems"
+        :key="item.value"
+        :is="question.itemComponent"
+        :question="question"
+        :item="item"
+      ></component>
+      <survey-other-choice
+        v-if="
+          question.renderedValue && question.isOtherSelected
+        "
+        :question="question"
+      />
+    <div v-if="question.showClearButtonInContent">
       <input
         type="button"
         :class="question.cssClasses.clearButton"
-        v-on:click="function() { question.clearValue(); }"
+        v-on:click="
+          () => {
+            question.clearValue(true);
+          }
+        "
         :value="question.clearButtonCaption"
-      >
-    </div>
-  </fieldset>
+      /></div></fieldset>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
 import { Component } from "vue-property-decorator";
 import { default as QuestionVue } from "./question";
-import { QuestionRadiogroupModel } from "../question_radiogroup";
+import { QuestionRadiogroupModel } from "survey-core";
 
 @Component
 export class Radiogroup extends QuestionVue<QuestionRadiogroupModel> {
   get choicesCount() {
     return this.question.visibleChoices.length - 1;
-  }
-  getItemClass(item: any) {
-    var itemClass = this.question.cssClasses.item
-
-    if(!this.question.hasColumns) {
-      itemClass += (this.question.colCount === 0
-        ? " sv_q_radiogroup_inline"
-        : " sv-q-col-" + this.question.colCount);
-    }
-    if (item.value === this.question.renderedValue) itemClass += " checked";
-    return itemClass;
   }
 }
 Vue.component("survey-radiogroup", Radiogroup);

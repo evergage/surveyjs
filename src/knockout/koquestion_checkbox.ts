@@ -1,61 +1,48 @@
 import * as ko from "knockout";
 import { QuestionCheckboxBaseImplementor } from "./koquestion_baseselect";
-import { Serializer } from "../jsonobject";
-import { QuestionFactory } from "../questionfactory";
-import { QuestionCheckboxModel } from "../question_checkbox";
-import { Question } from "../question";
+import { ItemValue, Serializer } from "survey-core";
+import { QuestionFactory } from "survey-core";
+import { QuestionCheckboxModel } from "survey-core";
+import { Question } from "survey-core";
+import { ImplementorBase } from "./kobase";
 
-class QuestionCheckboxImplementor extends QuestionCheckboxBaseImplementor {
+export class QuestionCheckboxImplementor extends QuestionCheckboxBaseImplementor {
   constructor(question: Question) {
     super(question);
   }
   protected getKoValue() {
     return this.question.renderedValue;
   }
+  protected setKoValue(val: any) {
+    this.question.renderedValue = val;
+  }
 }
 
 export class QuestionCheckbox extends QuestionCheckboxModel {
-  koAllSelected: any;
-  private isAllSelectedUpdating = false;
-  constructor(public name: string) {
+  private _implementor: QuestionCheckboxImplementor;
+  private _selectAllItemImpl: ImplementorBase = undefined;
+  private _otherItemImpl: ImplementorBase = undefined;
+  constructor(name: string) {
     super(name);
-    new QuestionCheckboxImplementor(this);
-    this.koAllSelected = ko.observable(this.isAllSelected);
-    var self = this;
-    this.koAllSelected.subscribe(function(newValue: any) {
-      if (self.isAllSelectedUpdating) return;
-      if (newValue) self.selectAll();
-      else self.clearValue();
-    });
+    this._selectAllItemImpl = new ImplementorBase(this.selectAllItem);
+    this._otherItemImpl = new ImplementorBase(this.otherItem);
   }
-  protected onValueChanged() {
-    super.onValueChanged();
-    this.updateAllSelected();
+  protected onBaseCreating() {
+    super.onBaseCreating();
+    this._implementor = new QuestionCheckboxImplementor(this);
   }
-  protected onVisibleChoicesChanged() {
-    super.onVisibleChoicesChanged();
-    this.updateAllSelected();
-  }
-  protected updateAllSelected() {
-    this.isAllSelectedUpdating = true;
-    this.koAllSelected(this.isAllSelected);
-    this.isAllSelectedUpdating = false;
-  }
-  getItemClass(item: any) {
-    var val = this.value; //trigger dependencies from koValue for knockout
-    var isChecked = this.isItemSelected(item);
-    var itemClass = this.cssClasses.item;
-
-    if (!this.hasColumns) {
-      itemClass +=
-        this.colCount === 0
-          ? " sv_q_checkbox_inline"
-          : " sv-q-col-" + this.colCount;
+  public dispose(): void {
+    if(this._selectAllItemImpl) {
+      this._selectAllItemImpl.dispose();
+      this._selectAllItemImpl = undefined;
     }
-
-    if (isChecked) itemClass += " checked";
-
-    return itemClass;
+    if(this._otherItemImpl) {
+      this._otherItemImpl.dispose();
+      this._otherItemImpl = undefined;
+    }
+    this._implementor.dispose();
+    this._implementor = undefined;
+    super.dispose();
   }
 }
 

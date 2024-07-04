@@ -1,32 +1,51 @@
 <template>
-  <div>
-    <survey-element
-      v-if="element.visible"
-      v-for="element in row.elements"
-      :key="element.idValue"
-      :id="element.id"
-      :style="{ paddingLeft: element.paddingLeft, paddingRight: element.paddingRight, width: element.renderWidth, display: 'inline-block' }"
+  <div :class="row.getRowCss()">
+    <survey-row-element
+      v-for="element in elements"
+      :key="element.id"
       :element="element"
       :survey="survey"
       :css="css"
-    />
+      :row="row"
+    >
+    </survey-row-element>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
 import { Component, Prop } from "vue-property-decorator";
-import { SurveyModel } from "../survey";
-import { PanelModelBase, PanelModel, QuestionRowModel } from "../panel";
-import { VueSurveyModel } from "./surveyModel";
+import { SurveyModel } from "survey-core";
+import { QuestionRowModel } from "survey-core";
+import { BaseVue } from "./base";
+import { Base } from "survey-core";
+
 @Component
-export class Row extends Vue {
-  @Prop row: any;
-  @Prop css: any;
-  @Prop survey: SurveyModel;
-  mounted() {
+export class Row extends BaseVue {
+  @Prop() row: QuestionRowModel;
+  @Prop() css: any;
+  @Prop() survey: SurveyModel;
+
+  get elements(): Array<any> {
+    return this.row.visibleElements;
+  }
+
+  protected getModel(): Base {
+    return this.row;
+  }
+  protected onMounted() {
     if (!!this.row) {
-      VueSurveyModel.updatePropertiesHash(this.row);
+      if (!this.row.isNeedRender) {
+        var rowContainerDiv = this.$el;
+        setTimeout(() => {
+          this.row.startLazyRendering(rowContainerDiv as HTMLElement);
+        }, 10);
+      }
+    }
+  }
+  beforeDestroy() {
+    if (!!this.row) {
+      this.row.isNeedRender = !this.row.isLazyRendering();
     }
   }
 }

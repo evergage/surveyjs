@@ -1,13 +1,6 @@
-import {
-  frameworks,
-  url,
-  setOptions,
-  initSurvey,
-  getSurveyResult
-} from "../settings";
-import { Selector, ClientFunction } from "testcafe";
-const assert = require("assert");
-const title = `preprocessTitlesAndHtml`;
+import { frameworks, url, initSurvey } from "../helper";
+import { Selector, ClientFunction, fixture, test } from "testcafe";
+const title = "preprocessTitlesAndHtml";
 
 const json = {
   questionTitleTemplate: "{no}) {title} {require}:",
@@ -54,7 +47,7 @@ frameworks.forEach(framework => {
     }
   );
 
-  test(`check title and html`, async t => {
+  test("check title and html", async t => {
     const getFirstTitle = Selector(() => document.querySelectorAll("h5"), {
       text: "A) Please type your name (*):",
       visibilityCheck: true,
@@ -70,12 +63,8 @@ frameworks.forEach(framework => {
       visibilityCheck: true,
       timeout: 1000
     });
-    const getcompletedHtml = ClientFunction(() =>
-      document.documentElement.innerHTML.indexOf(
-        "<p></p><h4>Thank you for sharing this information with us.</h4><p></p><p>Your name is: <b>wombat</b></p>" +
-          "<p>Your email is: <b>wombat@mail.mail</b></p><p>This is what is on your mind:</p><p>fresh grasses</p>"
-      )
-    );
+    const getcompletedHtml = "Thank you for sharing this information with us.Your name is: wombatYour email is: wombat@mail.mailThis is what is on your mind:fresh grasses";
+
     const getFirstInput = Selector(
       () => document.querySelectorAll(".sv_q_text_root")[0]
     );
@@ -86,15 +75,14 @@ frameworks.forEach(framework => {
     await t.hover(getFirstTitle).hover(getSecondTitle);
 
     await t
-      .typeText(getFirstInput, `wombat`)
-      .typeText(getSecondInput, `wombat@mail.mail`)
-      .click(`input[value="Next"]`);
+      .typeText(getFirstInput, "wombat")
+      .typeText(getSecondInput, "wombat@mail.mail")
+      .click("input[value=\"Next\"]");
 
     await t
       .hover(getThirdTitle)
-      .typeText(`textarea`, `fresh grasses`)
-      .click(`input[value="Complete"]`);
-
-    assert.notEqual(await getcompletedHtml(), -1);
+      .typeText("textarea", "fresh grasses")
+      .click("input[value=\"Complete\"]")
+      .expect(Selector(".sv_completed_page").textContent).eql(getcompletedHtml);
   });
 });
